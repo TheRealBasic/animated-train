@@ -24,7 +24,6 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private static final int PLAYER_W = 24;
     private static final int PLAYER_H = 38;
     private static final int KILL_PADDING = 500;
-    private static final double WARP_COOLDOWN = 0.20;
     private static final double FRICTION = 0.85;
 
     private final Timer timer;
@@ -39,7 +38,6 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private ExitGate exitGate;
     private ObjectiveManager objectiveManager;
     private GravityDir gravityDir;
-    private double warpCooldownTimer;
     private boolean leftPressed;
     private boolean rightPressed;
     private boolean jumpPressed;
@@ -63,8 +61,6 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private GravityDir respawnGravity;
     private int deathCount;
     private long lastTickNanos = System.nanoTime();
-
-    private enum Edge { LEFT, RIGHT, TOP, BOTTOM }
 
     private enum GameState {
         MAIN_MENU,
@@ -128,7 +124,6 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         for (GravityDir dir : GravityDir.values()) {
             lastSafeGroundedPos.put(dir, new Point2D.Double(spawn.x, spawn.y));
         }
-        warpCooldownTimer = 0;
     }
 
     @Override
@@ -137,10 +132,6 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         double dt = (now - lastTickNanos) / 1_000_000_000.0;
         dt = Math.min(dt, 0.05);
         lastTickNanos = now;
-        if (warpCooldownTimer > 0) {
-            warpCooldownTimer = Math.max(0, warpCooldownTimer - dt);
-        }
-
         if (gameState == GameState.IN_GAME) {
             handleInput();
             updateMovingPlatforms(dt);
@@ -148,7 +139,6 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             if (player.isGrounded()) {
                 lastSafeGroundedPos.put(gravityDir, new Point2D.Double(player.getX(), player.getY()));
             }
-            handleWarp();
             handleKillPlane();
             handleCheckpoints();
             handleHazards();
@@ -217,69 +207,11 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
     }
 
-    private void handleWarp() {
-        if (warpCooldownTimer > 0) {
-            return;
-        }
-
-        double px = player.getX();
-        double py = player.getY();
-        double pw = player.getWidth();
-        double ph = player.getHeight();
-        double margin = 12;
-        Edge exitEdge = null;
-
-        if (px + pw < 0) {
-            exitEdge = Edge.LEFT;
-        } else if (px > BASE_WIDTH) {
-            exitEdge = Edge.RIGHT;
-        } else if (py + ph < 0) {
-            exitEdge = Edge.TOP;
-        } else if (py > BASE_HEIGHT) {
-            exitEdge = Edge.BOTTOM;
-        }
-
-        if (exitEdge == null) {
-            return;
-        }
-
-        double newX = px;
-        double newY = py;
-        switch (exitEdge) {
-            case LEFT:
-                newX = margin;
-                gravityDir = GravityDir.LEFT;
-                break;
-            case RIGHT:
-                newX = BASE_WIDTH - pw - margin;
-                gravityDir = GravityDir.RIGHT;
-                break;
-            case TOP:
-                newY = margin;
-                gravityDir = GravityDir.UP;
-                break;
-            case BOTTOM:
-                newY = BASE_HEIGHT - ph - margin;
-                gravityDir = GravityDir.DOWN;
-                break;
-        }
-
-        player.setPosition(newX, newY);
-        player.resetVelocity();
-        if (collidesWithPlatform(player.getX(), player.getY())) {
-            Point2D.Double fallback = lastSafeGroundedPos.getOrDefault(gravityDir, new Point2D.Double(newX, newY));
-            player.setPosition(fallback.x, fallback.y);
-            player.resetVelocity();
-        }
-        warpCooldownTimer = WARP_COOLDOWN;
-    }
-
     private void respawn() {
         deathCount++;
         player.setPosition(respawnPosition.x, respawnPosition.y);
         player.resetVelocity();
         gravityDir = respawnGravity;
-        warpCooldownTimer = 0;
     }
 
     private void updateMovingPlatforms(double dt) {
@@ -303,6 +235,26 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             }
         }
         return false;
+    }
+
+    private void changeGravity(GravityDir newDir) {
+        if (gravityDir == newDir) {
+            return;
+        }
+
+        GravityDir previousDir = gravityDir;
+        Point2D.Double previousPos = new Point2D.Double(player.getX(), player.getY());
+        gravityDir = newDir;
+        player.resetVelocity();
+
+        if (collidesWithPlatform(player.getX(), player.getY())) {
+            Point2D.Double safePos = lastSafeGroundedPos.getOrDefault(newDir, respawnPosition);
+            player.setPosition(safePos.x, safePos.y);
+            if (collidesWithPlatform(player.getX(), player.getY())) {
+                gravityDir = previousDir;
+                player.setPosition(previousPos.x, previousPos.y);
+            }
+        }
     }
 
     private void onLevelComplete() {
@@ -493,7 +445,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.drawString("Time: " + String.format("%.1fs", objectiveManager.getElapsedTime()), 14, 82);
         g2d.drawString("Par: " + String.format("%.1fs", objectiveManager.getParTimeSeconds()), 14, 102);
         g2d.drawString("Deaths: " + deathCount, 14, 122);
-        g2d.drawString("Controls: A/D move • Space jump • Warp edges flip gravity", 14, 142);
+        g2d.drawString("Controls: A/D move • Space jump • I/J/K/L rotate gravity", 14, 142);
         if (settings.isShowDebugHud()) {
             g2d.drawString("Position: (" + (int) player.getX() + ", " + (int) player.getY() + ")", 14, 162);
             g2d.drawString("Velocity: (" + String.format("%.2f", player.getVelX()) + ", " + String.format("%.2f", player.getVelY()) + ")", 14, 182);
@@ -621,6 +573,19 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             gameState = GameState.PAUSE;
             pauseMenuIndex = 0;
             return;
+        }
+
+        if (e.getKeyCode() == KeyEvent.VK_I) {
+            changeGravity(GravityDir.UP);
+        }
+        if (e.getKeyCode() == KeyEvent.VK_J) {
+            changeGravity(GravityDir.LEFT);
+        }
+        if (e.getKeyCode() == KeyEvent.VK_K) {
+            changeGravity(GravityDir.DOWN);
+        }
+        if (e.getKeyCode() == KeyEvent.VK_L) {
+            changeGravity(GravityDir.RIGHT);
         }
 
         if (e.getKeyCode() == settings.getKeyLeft()) {
