@@ -23,12 +23,12 @@ public class CoopDoor {
         int w = (int) bounds.width;
         int h = (int) bounds.height;
 
-        g2d.setColor(new Color(12, 14, 22, 150));
+        g2d.setColor(new Color(8, 10, 16, 150));
         g2d.fillRect(x + 2, y + 2, w, h);
 
-        g2d.setColor(open ? new Color(140, 240, 190) : new Color(48, 66, 98));
+        g2d.setColor(open ? new Color(96, 170, 140) : new Color(42, 64, 90));
         g2d.fillRect(x, y, w, h);
-        g2d.setColor(open ? new Color(20, 70, 60) : new Color(18, 26, 40));
+        g2d.setColor(open ? new Color(24, 70, 64) : new Color(16, 26, 38));
         g2d.drawRect(x, y, w, h);
     }
 
