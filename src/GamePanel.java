@@ -10,6 +10,7 @@ import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
 
 public class GamePanel extends JPanel implements ActionListener, KeyListener {
@@ -19,7 +20,6 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private static final int PLAYER_H = 38;
     private static final int KILL_PLANE_PADDING = 400;
     private static final double WARP_COOLDOWN = 0.20;
-    private static final double INVERT_DURATION = 1.2;
     private static final double FRICTION = 0.85;
     private static final int FLOOR_HEIGHT = 60;
 
@@ -27,14 +27,14 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private final Player player;
     private final List<Platform> platforms;
     private final java.awt.geom.Point2D.Double spawnPoint;
-    private java.awt.geom.Point2D.Double lastSafeGroundedPos;
+    private final EnumMap<GravityDir, java.awt.geom.Point2D.Double> lastSafeGroundedPos;
+    private GravityDir gravityDir;
     private enum Edge { LEFT, RIGHT, TOP, BOTTOM }
     private boolean leftPressed;
     private boolean rightPressed;
     private boolean jumpPressed;
     private boolean jumpHeld;
     private double warpCooldownTimer;
-    private double invertControlsTimer;
 
     public GamePanel() {
         setPreferredSize(new Dimension(WIDTH, HEIGHT));
@@ -43,7 +43,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         addKeyListener(this);
 
         spawnPoint = new java.awt.geom.Point2D.Double(80, HEIGHT - FLOOR_HEIGHT - PLAYER_H - 12);
-        lastSafeGroundedPos = new java.awt.geom.Point2D.Double(spawnPoint.x, spawnPoint.y);
+        lastSafeGroundedPos = new EnumMap<>(GravityDir.class);
+        gravityDir = GravityDir.DOWN;
+        lastSafeGroundedPos.put(gravityDir, new java.awt.geom.Point2D.Double(spawnPoint.x, spawnPoint.y));
         player = new Player(spawnPoint.x, spawnPoint.y, PLAYER_W, PLAYER_H);
         platforms = buildPlatforms();
         timer = new Timer(16, this);
@@ -70,13 +72,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         if (warpCooldownTimer > 0) {
             warpCooldownTimer = Math.max(0, warpCooldownTimer - dt);
         }
-        if (invertControlsTimer > 0) {
-            invertControlsTimer = Math.max(0, invertControlsTimer - dt);
-        }
         handleInput();
-        player.applyPhysics(platforms);
+        player.applyPhysics(platforms, gravityDir);
         if (player.isGrounded()) {
-            lastSafeGroundedPos = new java.awt.geom.Point2D.Double(player.getX(), player.getY());
+            lastSafeGroundedPos.put(gravityDir, new java.awt.geom.Point2D.Double(player.getX(), player.getY()));
         }
         handleWarp();
         handleKillPlane();
@@ -87,32 +86,53 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         double moveSpeed = 0.9;
         boolean moveLeft = leftPressed;
         boolean moveRight = rightPressed;
-        if (invertControlsTimer > 0) {
-            boolean temp = moveLeft;
-            moveLeft = moveRight;
-            moveRight = temp;
-        }
-        if (moveLeft && !moveRight) {
-            player.addVelocity(-moveSpeed, 0);
-        } else if (moveRight && !moveLeft) {
-            player.addVelocity(moveSpeed, 0);
+
+        if (gravityDir.isVertical()) {
+            if (moveLeft && !moveRight) {
+                player.addVelocity(-moveSpeed, 0);
+            } else if (moveRight && !moveLeft) {
+                player.addVelocity(moveSpeed, 0);
+            } else {
+                player.applyFriction(FRICTION, gravityDir);
+            }
         } else {
-            player.applyFriction(FRICTION);
+            if (moveLeft && !moveRight) {
+                player.addVelocity(0, -moveSpeed);
+            } else if (moveRight && !moveLeft) {
+                player.addVelocity(0, moveSpeed);
+            } else {
+                player.applyFriction(FRICTION, gravityDir);
+            }
         }
 
         if (jumpPressed && !jumpHeld && player.isGrounded()) {
-            player.jump();
+            player.jump(gravityDir);
         }
         jumpHeld = jumpPressed;
     }
 
     private void handleKillPlane() {
-        if (player.getY() > HEIGHT + KILL_PLANE_PADDING) {
-            java.awt.geom.Point2D.Double fallback = lastSafeGroundedPos != null ? lastSafeGroundedPos : spawnPoint;
+        boolean outOfBounds = false;
+        switch (gravityDir) {
+            case DOWN:
+                outOfBounds = player.getY() > HEIGHT + KILL_PLANE_PADDING;
+                break;
+            case UP:
+                outOfBounds = player.getY() < -KILL_PLANE_PADDING;
+                break;
+            case LEFT:
+                outOfBounds = player.getX() < -KILL_PLANE_PADDING;
+                break;
+            case RIGHT:
+                outOfBounds = player.getX() > WIDTH + KILL_PLANE_PADDING;
+                break;
+        }
+
+        if (outOfBounds) {
+            java.awt.geom.Point2D.Double fallback = lastSafeGroundedPos.getOrDefault(gravityDir, spawnPoint);
             player.setPosition(fallback.x, fallback.y);
             player.resetVelocity();
             warpCooldownTimer = 0;
-            invertControlsTimer = 0;
         }
     }
 
@@ -129,7 +149,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         double viewTop = 0;
         double viewRight = WIDTH;
         double viewBottom = HEIGHT;
-        double margin = 4;
+        double margin = 8;
         Edge exitEdge = null;
 
         if (px + pw < viewLeft) {
@@ -148,69 +168,37 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
         double newX = px;
         double newY = py;
-        double newVelX = player.getVelX();
-        double newVelY = player.getVelY();
-        double normalX = 0;
-        double normalY = 0;
-
         switch (exitEdge) {
             case LEFT:
-                double tLeft = clamp((py - viewTop) / (viewBottom - viewTop), 0, 1);
-                newX = clamp(viewLeft + tLeft * (viewRight - viewLeft), viewLeft + margin, viewRight - pw - margin);
+                newX = viewLeft + margin;
                 newY = viewTop + margin;
-                double tempVelLX = newVelX;
-                newVelX = newVelY;
-                newVelY = -tempVelLX;
-                normalY = 1;
+                gravityDir = GravityDir.UP;
                 break;
             case RIGHT:
-                double tRight = clamp((py - viewTop) / (viewBottom - viewTop), 0, 1);
-                newX = clamp(viewLeft + tRight * (viewRight - viewLeft), viewLeft + margin, viewRight - pw - margin);
-                newY = viewBottom - ph - margin;
-                double tempVelRX = newVelX;
-                newVelX = -newVelY;
-                newVelY = tempVelRX;
-                normalY = -1;
+                newX = viewRight - pw - margin;
+                newY = viewTop + margin;
+                gravityDir = GravityDir.UP;
                 break;
             case TOP:
-                double tTop = clamp((px - viewLeft) / (viewRight - viewLeft), 0, 1);
-                newY = clamp(viewTop + tTop * (viewBottom - viewTop), viewTop + margin, viewBottom - ph - margin);
                 newX = viewRight - pw - margin;
-                double tempVelTY = newVelY;
-                newVelY = newVelX;
-                newVelX = -tempVelTY;
-                normalX = -1;
+                newY = viewBottom - ph - margin;
+                gravityDir = GravityDir.DOWN;
                 break;
             case BOTTOM:
-                double tBottom = clamp((px - viewLeft) / (viewRight - viewLeft), 0, 1);
-                newY = clamp(viewTop + tBottom * (viewBottom - viewTop), viewTop + margin, viewBottom - ph - margin);
                 newX = viewLeft + margin;
-                double tempVelBY = newVelY;
-                newVelY = -newVelX;
-                newVelX = tempVelBY;
-                normalX = 1;
+                newY = viewBottom - ph - margin;
+                gravityDir = GravityDir.DOWN;
                 break;
         }
 
         player.setPosition(newX, newY);
-        player.setVelocity(newVelX, newVelY);
-        resolvePostWarpOverlap(normalX, normalY);
-        warpCooldownTimer = WARP_COOLDOWN;
-        invertControlsTimer = INVERT_DURATION;
-    }
-
-    private void resolvePostWarpOverlap(double normalX, double normalY) {
-        double step = 2.0;
-        int attempts = 8;
-        while (collidesWithPlatform(player.getX(), player.getY()) && attempts-- > 0) {
-            player.setPosition(player.getX() + normalX * step, player.getY() + normalY * step);
-        }
-
+        player.resetVelocity();
         if (collidesWithPlatform(player.getX(), player.getY())) {
-            java.awt.geom.Point2D.Double fallback = lastSafeGroundedPos != null ? lastSafeGroundedPos : spawnPoint;
+            java.awt.geom.Point2D.Double fallback = lastSafeGroundedPos.getOrDefault(gravityDir, spawnPoint);
             player.setPosition(fallback.x, fallback.y);
             player.resetVelocity();
         }
+        warpCooldownTimer = WARP_COOLDOWN;
     }
 
     private boolean collidesWithPlatform(double px, double py) {
@@ -224,10 +212,6 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         return false;
     }
 
-    private double clamp(double value, double min, double max) {
-        return Math.max(min, Math.min(max, value));
-    }
-
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
@@ -236,7 +220,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
         drawBackground(g2d);
         drawPlatforms(g2d);
-        player.draw(g2d);
+        player.draw(g2d, gravityDir);
         drawHud(g2d);
     }
 
@@ -265,10 +249,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.drawString("Controls: A/D to move, W or Space to jump", 14, 22);
         g2d.drawString("Position: (" + (int) player.getX() + ", " + (int) player.getY() + ")", 14, 42);
         g2d.drawString("Velocity: (" + String.format("%.2f", player.getVelX()) + ", " + String.format("%.2f", player.getVelY()) + ")", 14, 62);
-        if (invertControlsTimer > 0) {
-            String confusion = String.format("WARP CONFUSION: %.1fs", invertControlsTimer);
-            g2d.drawString(confusion, 14, 82);
-        }
+        g2d.drawString("MODE: " + gravityDir.name(), 14, 82);
     }
 
     @Override
