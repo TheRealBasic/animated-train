@@ -97,6 +97,13 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private BufferedImage tintBufferWarm;
     private final List<Platform> platformScratch = new ArrayList<>();
     private final List<Platform> doorPlatforms = new ArrayList<>();
+    private boolean shiftPressed;
+    private double fpsTimer;
+    private int fpsFrames;
+    private double fpsDisplay;
+    private String toastMessage = "";
+    private double toastTimer;
+    private Color toastColor = new Color(230, 235, 243);
 
     private enum GameState {
         MAIN_MENU,
@@ -114,6 +121,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         settings = Settings.load();
         SoundManager.setMasterVolume(settings.getMasterVolume() / 100.0);
         scale = settings.getScreenScale();
+        directIpInput = settings.getLastDirectIp();
         setPreferredSize(new Dimension((int) (BASE_WIDTH * scale), (int) (BASE_HEIGHT * scale)));
         setBackground(new Color(20, 26, 34));
         setFocusable(true);
@@ -188,6 +196,13 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         double dt = (now - lastTickNanos) / 1_000_000_000.0;
         dt = Math.min(dt, 0.05);
         lastTickNanos = now;
+        fpsFrames++;
+        fpsTimer += dt;
+        if (fpsTimer >= 1.0) {
+            fpsDisplay = fpsFrames / fpsTimer;
+            fpsFrames = 0;
+            fpsTimer = 0;
+        }
         if (multiplayerActive && gameState == GameState.MULTIPLAYER_WAIT) {
             pollWaitingLevelSync();
         }
@@ -237,7 +252,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private void handleInput() {
-        double moveSpeed = 0.9;
+        double moveSpeed = shiftPressed ? 1.35 : 0.9;
         boolean moveLeft = leftPressed;
         boolean moveRight = rightPressed;
 
@@ -290,10 +305,14 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
         for (int i = 0; i < orbs.size(); i++) {
             FluxOrb orb = orbs.get(i);
-            if (orb.checkCollected(target)) {
+            boolean alreadyCollected = ((localOrbMask | remoteOrbMask) & (1L << i)) != 0;
+            if (orb.checkCollected(target) && !alreadyCollected) {
                 if (localPlayer) {
                     localOrbMask |= (1L << i);
                     SoundManager.playTone(1320, 160, 0.55);
+                    setToast("Flux orb secured!", new Color(180, 255, 220));
+                    screenShakeTimer = 0.3;
+                    screenShakeStrength = 3.5;
                 } else {
                     remoteOrbMask |= (1L << i);
                 }
@@ -348,6 +367,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             if (!checkpoint.isActivated() && checkpoint.check(player)) {
                 respawnPosition = new Point2D.Double(checkpoint.getPosition().x, checkpoint.getPosition().y);
                 respawnGravity = gravityDir;
+                setToast("Checkpoint reached", new Color(200, 230, 255));
             }
         }
     }
@@ -395,6 +415,18 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         if (screenShakeTimer > 0) {
             screenShakeTimer = Math.max(0, screenShakeTimer - dt);
         }
+        if (toastTimer > 0) {
+            toastTimer = Math.max(0, toastTimer - dt);
+            if (toastTimer == 0) {
+                toastMessage = "";
+            }
+        }
+    }
+
+    private void setToast(String message, Color color) {
+        toastMessage = message;
+        toastColor = color;
+        toastTimer = 2.2;
     }
 
     private boolean collidesWithPlatform(double px, double py) {
@@ -841,6 +873,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         lines.add("Master Volume: " + settings.getMasterVolume());
         lines.add("Screen Scale: " + String.format("%.1fx", settings.getScreenScale()));
         lines.add("Show Debug HUD: " + (settings.isShowDebugHud() ? "On" : "Off"));
+        lines.add("Show FPS Counter: " + (settings.isShowFps() ? "On" : "Off"));
         lines.add("Reduced Effects: " + (settings.isReducedEffects() ? "On" : "Off"));
         lines.add("Rebind Left: " + KeyEvent.getKeyText(settings.getKeyLeft()));
         lines.add("Rebind Right: " + KeyEvent.getKeyText(settings.getKeyRight()));
@@ -869,6 +902,15 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             String label = (i + 1) + ". " + levelManager.getLevel(i).getName();
             if (locked) {
                 label += " (Locked)";
+            } else {
+                double best = saveData.bestTimes[i];
+                String medal = saveData.bestMedals[i];
+                if (best > 0 || (medal != null && !medal.isEmpty())) {
+                    label += " • Best: " + (best > 0 ? String.format("%.1fs", best) : "--");
+                    if (medal != null && !medal.isEmpty()) {
+                        label += " (" + medal + ")";
+                    }
+                }
             }
             g2d.setColor(levelSelectIndex == i ? new Color(190, 255, 180) : new Color(230, 235, 243));
             if (locked) {
@@ -946,10 +988,11 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
         Color panelBg = new Color(10, 16, 26, 180);
         Color panelBorder = new Color(120, 200, 255, 150);
+        int panelHeight = 240;
         g2d.setColor(panelBg);
-        g2d.fillRoundRect(10, 10, 270, 175, 14, 14);
+        g2d.fillRoundRect(10, 10, 270, panelHeight, 14, 14);
         g2d.setColor(panelBorder);
-        g2d.drawRoundRect(10, 10, 270, 175, 14, 14);
+        g2d.drawRoundRect(10, 10, 270, panelHeight, 14, 14);
 
         g2d.setColor(new Color(226, 240, 255));
         g2d.setFont(new Font("Consolas", Font.BOLD, 18));
@@ -963,6 +1006,17 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.drawString("Time: " + String.format("%.1fs", objectiveManager.getElapsedTime()), 24, 128);
         g2d.drawString("Par: " + String.format("%.1fs", objectiveManager.getParTimeSeconds()), 24, 150);
         g2d.drawString("Deaths: " + deathCount, 24, 172);
+
+        double orbProgress = orbs.isEmpty() ? 1.0 : collected / (double) orbs.size();
+        drawProgressBar(g2d, 24, 186, 210, 14, orbProgress, new Color(120, 255, 200), "Gate unlock");
+
+        double par = objectiveManager.getParTimeSeconds();
+        if (par > 0) {
+            double elapsed = objectiveManager.getElapsedTime();
+            double parProgress = Math.min(1.0, elapsed / par);
+            Color parColor = elapsed <= par ? new Color(200, 240, 140) : new Color(255, 180, 160);
+            drawProgressBar(g2d, 24, 210, 210, 14, parProgress, parColor, "Par pace");
+        }
 
         int cooldownX = BASE_WIDTH - 230;
         int cooldownY = 16;
@@ -994,11 +1048,75 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
         g2d.setColor(new Color(160, 190, 210));
         g2d.setFont(new Font("Consolas", Font.PLAIN, 14));
-        g2d.drawString("Controls: A/D move • Space jump • I/J/K/L rotate", 18, BASE_HEIGHT - 28);
+        g2d.drawString("Controls: A/D move • Space jump • Shift sprint • R restart • I/J/K/L rotate", 18, BASE_HEIGHT - 28);
         if (settings.isShowDebugHud()) {
             g2d.drawString("Position: (" + (int) player.getX() + ", " + (int) player.getY() + ")", 18, BASE_HEIGHT - 50);
             g2d.drawString("Velocity: (" + String.format("%.2f", player.getVelX()) + ", " + String.format("%.2f", player.getVelY()) + ")", 18, BASE_HEIGHT - 70);
         }
+        if (settings.isShowFps()) {
+            String fpsText = String.format("FPS: %.0f", fpsDisplay);
+            g2d.drawString(fpsText, BASE_WIDTH - 120, BASE_HEIGHT - 28);
+        }
+
+        if (!toastMessage.isEmpty()) {
+            g2d.setColor(new Color(10, 16, 26, 180));
+            int width = g2d.getFontMetrics().stringWidth(toastMessage);
+            int x = (BASE_WIDTH - width) / 2 - 12;
+            int y = 70;
+            g2d.fillRoundRect(x, y - 24, width + 24, 40, 12, 12);
+            g2d.setColor(toastColor);
+            g2d.drawString(toastMessage, (BASE_WIDTH - width) / 2, y);
+        }
+
+        drawGravityCompass(g2d);
+    }
+
+    private void drawProgressBar(Graphics2D g2d, int x, int y, int width, int height, double progress, Color fill, String label) {
+        progress = Math.max(0, Math.min(1.0, progress));
+        g2d.setColor(new Color(15, 24, 36, 160));
+        g2d.fillRoundRect(x, y, width, height, 8, 8);
+        g2d.setColor(fill);
+        g2d.fillRoundRect(x, y, (int) (width * progress), height, 8, 8);
+        g2d.setColor(new Color(180, 220, 255, 180));
+        g2d.drawRoundRect(x, y, width, height, 8, 8);
+        g2d.setFont(new Font("Consolas", Font.PLAIN, 12));
+        g2d.drawString(label, x, y - 4);
+    }
+
+    private void drawGravityCompass(Graphics2D g2d) {
+        int size = 70;
+        int x = BASE_WIDTH - size - 24;
+        int y = 20;
+        g2d.setColor(new Color(10, 16, 26, 180));
+        g2d.fillOval(x, y, size, size);
+        g2d.setColor(new Color(180, 220, 255));
+        g2d.drawOval(x, y, size, size);
+
+        int cx = x + size / 2;
+        int cy = y + size / 2;
+        int arrowLength = 26;
+        int dx = 0;
+        int dy = 0;
+        switch (gravityDir) {
+            case UP:
+                dy = -arrowLength;
+                break;
+            case DOWN:
+                dy = arrowLength;
+                break;
+            case LEFT:
+                dx = -arrowLength;
+                break;
+            case RIGHT:
+                dx = arrowLength;
+                break;
+        }
+        g2d.setStroke(new BasicStroke(3));
+        g2d.drawLine(cx, cy, cx + dx, cy + dy);
+        g2d.fillOval(cx - 4, cy - 4, 8, 8);
+        g2d.setStroke(new BasicStroke(1));
+        g2d.setFont(new Font("Consolas", Font.PLAIN, 12));
+        g2d.drawString("Gravity", x + 8, y + size + 14);
     }
 
     private void drawPauseMenu(Graphics2D g2d) {
@@ -1107,7 +1225,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             return;
         }
         if (gameState == GameState.SETTINGS) {
-            handleMenuNavigation(e, 8, this::handleSettingsSelect);
+            handleMenuNavigation(e, 9, this::handleSettingsSelect);
             if (e.getKeyCode() == KeyEvent.VK_LEFT) {
                 adjustSetting(-1);
             } else if (e.getKeyCode() == KeyEvent.VK_RIGHT) {
@@ -1135,6 +1253,13 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             return;
         }
 
+        if (e.getKeyCode() == KeyEvent.VK_R) {
+            loadLevel(saveData.currentLevelIndex);
+            gameState = GameState.IN_GAME;
+            setToast("Level restarted", new Color(200, 240, 255));
+            return;
+        }
+
         if (e.getKeyCode() == KeyEvent.VK_I) {
             changeGravity(GravityDir.UP);
         }
@@ -1156,6 +1281,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
         if (e.getKeyCode() == settings.getKeyJump() || e.getKeyCode() == KeyEvent.VK_W || e.getKeyCode() == KeyEvent.VK_UP) {
             jumpPressed = true;
+        }
+        if (e.getKeyCode() == KeyEvent.VK_SHIFT) {
+            shiftPressed = true;
         }
     }
 
@@ -1348,11 +1476,15 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 startHostingSession();
                 break;
             case 1:
+                settings.setLastDirectIp(directIpInput);
+                settings.save();
                 startClientSession(directIpInput);
                 break;
             case 2:
                 Optional<String> lanIp = MultiplayerSession.discoverLanHost();
                 lanIp.ifPresent(ip -> directIpInput = ip);
+                settings.setLastDirectIp(directIpInput);
+                settings.save();
                 startClientSession(directIpInput);
                 break;
             case 3:
@@ -1396,22 +1528,26 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 settings.save();
                 break;
             case 3:
-                settings.setReducedEffects(!settings.isReducedEffects());
+                settings.setShowFps(!settings.isShowFps());
                 settings.save();
                 break;
             case 4:
-                waitingForBinding = true;
-                bindingTarget = "Left";
+                settings.setReducedEffects(!settings.isReducedEffects());
+                settings.save();
                 break;
             case 5:
                 waitingForBinding = true;
-                bindingTarget = "Right";
+                bindingTarget = "Left";
                 break;
             case 6:
                 waitingForBinding = true;
-                bindingTarget = "Jump";
+                bindingTarget = "Right";
                 break;
             case 7:
+                waitingForBinding = true;
+                bindingTarget = "Jump";
+                break;
+            case 8:
                 settings.save();
                 gameState = previousStateBeforeSettings;
                 break;
@@ -1432,7 +1568,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private void handleSettingsSelect() {
-        if (settingsMenuIndex == 7) {
+        if (settingsMenuIndex == 8) {
             gameState = previousStateBeforeSettings;
         } else {
             adjustSetting(0);
@@ -1449,6 +1585,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
         if (e.getKeyCode() == settings.getKeyJump() || e.getKeyCode() == KeyEvent.VK_W || e.getKeyCode() == KeyEvent.VK_UP) {
             jumpPressed = false;
+        }
+        if (e.getKeyCode() == KeyEvent.VK_SHIFT) {
+            shiftPressed = false;
         }
     }
 

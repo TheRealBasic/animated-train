@@ -9,10 +9,12 @@ public class Settings {
     private int masterVolume = 80;
     private double screenScale = 1.0;
     private boolean showDebugHud = false;
+    private boolean showFps = false;
     private boolean reducedEffects = false;
     private int keyLeft = java.awt.event.KeyEvent.VK_A;
     private int keyRight = java.awt.event.KeyEvent.VK_D;
     private int keyJump = java.awt.event.KeyEvent.VK_SPACE;
+    private String lastDirectIp = "127.0.0.1";
 
     public static Settings load() {
         Settings settings = new Settings();
@@ -26,10 +28,12 @@ public class Settings {
             settings.masterVolume = Integer.parseInt(props.getProperty("masterVolume", "80"));
             settings.screenScale = Double.parseDouble(props.getProperty("screenScale", "1.0"));
             settings.showDebugHud = Boolean.parseBoolean(props.getProperty("showDebugHud", "false"));
+            settings.showFps = Boolean.parseBoolean(props.getProperty("showFps", "false"));
             settings.reducedEffects = Boolean.parseBoolean(props.getProperty("reducedEffects", "false"));
             settings.keyLeft = Integer.parseInt(props.getProperty("keyLeft", Integer.toString(settings.keyLeft)));
             settings.keyRight = Integer.parseInt(props.getProperty("keyRight", Integer.toString(settings.keyRight)));
             settings.keyJump = Integer.parseInt(props.getProperty("keyJump", Integer.toString(settings.keyJump)));
+            settings.lastDirectIp = props.getProperty("lastDirectIp", settings.lastDirectIp);
         } catch (IOException | NumberFormatException ex) {
             // keep defaults
         }
@@ -45,10 +49,12 @@ public class Settings {
         props.setProperty("masterVolume", Integer.toString(masterVolume));
         props.setProperty("screenScale", Double.toString(screenScale));
         props.setProperty("showDebugHud", Boolean.toString(showDebugHud));
+        props.setProperty("showFps", Boolean.toString(showFps));
         props.setProperty("reducedEffects", Boolean.toString(reducedEffects));
         props.setProperty("keyLeft", Integer.toString(keyLeft));
         props.setProperty("keyRight", Integer.toString(keyRight));
         props.setProperty("keyJump", Integer.toString(keyJump));
+        props.setProperty("lastDirectIp", lastDirectIp);
         try (FileOutputStream out = new FileOutputStream(SETTINGS_PATH)) {
             props.store(out, "Platformer settings");
         } catch (IOException ignored) {
@@ -109,5 +115,23 @@ public class Settings {
 
     public void setKeyJump(int keyJump) {
         this.keyJump = keyJump;
+    }
+
+    public boolean isShowFps() {
+        return showFps;
+    }
+
+    public void setShowFps(boolean showFps) {
+        this.showFps = showFps;
+    }
+
+    public String getLastDirectIp() {
+        return lastDirectIp;
+    }
+
+    public void setLastDirectIp(String lastDirectIp) {
+        if (lastDirectIp != null && !lastDirectIp.isBlank()) {
+            this.lastDirectIp = lastDirectIp;
+        }
     }
 }
