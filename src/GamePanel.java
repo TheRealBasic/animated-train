@@ -472,7 +472,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         renderScene(sceneG);
         sceneG.dispose();
 
-        BufferedImage processed = applyScreenEffects(sceneBuffer);
+        BufferedImage processed = settings.isReducedEffects() ? sceneBuffer : applyScreenEffects(sceneBuffer);
 
         Graphics2D g2d = (Graphics2D) g;
         g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
@@ -483,7 +483,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.translate(offsetX, offsetY);
         g2d.scale(renderScale, renderScale);
         g2d.drawImage(processed, 0, 0, null);
-        drawCrtBezel(g2d);
+        if (!settings.isReducedEffects()) {
+            drawCrtBezel(g2d);
+        }
         g2d.setTransform(oldTransform);
     }
 
@@ -545,6 +547,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private BufferedImage applyScreenEffects(BufferedImage source) {
+        if (settings.isReducedEffects()) {
+            return source;
+        }
         int width = source.getWidth();
         int height = source.getHeight();
         ensureBuffers(width, height);
@@ -833,6 +838,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         lines.add("Master Volume: " + settings.getMasterVolume());
         lines.add("Screen Scale: " + String.format("%.1fx", settings.getScreenScale()));
         lines.add("Show Debug HUD: " + (settings.isShowDebugHud() ? "On" : "Off"));
+        lines.add("Reduced Effects: " + (settings.isReducedEffects() ? "On" : "Off"));
         lines.add("Rebind Left: " + KeyEvent.getKeyText(settings.getKeyLeft()));
         lines.add("Rebind Right: " + KeyEvent.getKeyText(settings.getKeyRight()));
         lines.add("Rebind Jump: " + KeyEvent.getKeyText(settings.getKeyJump()));
@@ -1098,7 +1104,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             return;
         }
         if (gameState == GameState.SETTINGS) {
-            handleMenuNavigation(e, 7, this::handleSettingsSelect);
+            handleMenuNavigation(e, 8, this::handleSettingsSelect);
             if (e.getKeyCode() == KeyEvent.VK_LEFT) {
                 adjustSetting(-1);
             } else if (e.getKeyCode() == KeyEvent.VK_RIGHT) {
@@ -1387,18 +1393,22 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 settings.save();
                 break;
             case 3:
-                waitingForBinding = true;
-                bindingTarget = "Left";
+                settings.setReducedEffects(!settings.isReducedEffects());
+                settings.save();
                 break;
             case 4:
                 waitingForBinding = true;
-                bindingTarget = "Right";
+                bindingTarget = "Left";
                 break;
             case 5:
                 waitingForBinding = true;
-                bindingTarget = "Jump";
+                bindingTarget = "Right";
                 break;
             case 6:
+                waitingForBinding = true;
+                bindingTarget = "Jump";
+                break;
+            case 7:
                 settings.save();
                 gameState = previousStateBeforeSettings;
                 break;
@@ -1419,7 +1429,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private void handleSettingsSelect() {
-        if (settingsMenuIndex == 6) {
+        if (settingsMenuIndex == 7) {
             gameState = previousStateBeforeSettings;
         } else {
             adjustSetting(0);
