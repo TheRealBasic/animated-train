@@ -9,13 +9,17 @@ public class LevelData {
     private final List<Spike> spikes;
     private final List<Checkpoint> checkpoints;
     private final List<Point2D.Double> orbPositions;
+    private final List<CoopButton> buttons;
+    private final List<CoopDoor> doors;
     private final double exitGateX;
     private final double exitGateY;
     private final int exitGateWidth;
     private final int exitGateHeight;
     private final Point2D.Double spawnPosition;
+    private final Point2D.Double partnerSpawnPosition;
     private final GravityDir spawnGravity;
     private final double parTimeSeconds;
+    private final boolean multiplayerOnly;
 
     public LevelData(String name,
                      List<Platform> platforms,
@@ -23,26 +27,34 @@ public class LevelData {
                      List<MovingPlatform> movers,
                      List<Spike> spikes,
                      List<Checkpoint> checkpoints,
+                     List<CoopButton> buttons,
+                     List<CoopDoor> doors,
                      double exitGateX,
                      double exitGateY,
                      int exitGateWidth,
                      int exitGateHeight,
                      Point2D.Double spawnPosition,
+                     Point2D.Double partnerSpawnPosition,
                      GravityDir spawnGravity,
-                     double parTimeSeconds) {
+                     double parTimeSeconds,
+                     boolean multiplayerOnly) {
         this.name = name;
         this.platforms = new ArrayList<>(platforms);
         this.movers = new ArrayList<>(movers);
         this.spikes = new ArrayList<>(spikes);
         this.checkpoints = new ArrayList<>(checkpoints);
         this.orbPositions = new ArrayList<>(orbPositions);
+        this.buttons = new ArrayList<>(buttons);
+        this.doors = new ArrayList<>(doors);
         this.exitGateX = exitGateX;
         this.exitGateY = exitGateY;
         this.exitGateWidth = exitGateWidth;
         this.exitGateHeight = exitGateHeight;
         this.spawnPosition = spawnPosition;
+        this.partnerSpawnPosition = partnerSpawnPosition;
         this.spawnGravity = spawnGravity;
         this.parTimeSeconds = parTimeSeconds;
+        this.multiplayerOnly = multiplayerOnly;
     }
 
     public String getName() {
@@ -69,6 +81,14 @@ public class LevelData {
         return new ArrayList<>(orbPositions);
     }
 
+    public List<CoopButton> getButtons() {
+        return new ArrayList<>(buttons);
+    }
+
+    public List<CoopDoor> getDoors() {
+        return new ArrayList<>(doors);
+    }
+
     public double getExitGateX() {
         return exitGateX;
     }
@@ -89,11 +109,19 @@ public class LevelData {
         return spawnPosition;
     }
 
+    public Point2D.Double getPartnerSpawnPosition() {
+        return partnerSpawnPosition;
+    }
+
     public GravityDir getSpawnGravity() {
         return spawnGravity;
     }
 
     public double getParTimeSeconds() {
         return parTimeSeconds;
+    }
+
+    public boolean isMultiplayerOnly() {
+        return multiplayerOnly;
     }
 }

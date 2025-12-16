@@ -3,6 +3,7 @@ import java.awt.Graphics2D;
 import java.awt.BasicStroke;
 import java.awt.GradientPaint;
 import java.awt.geom.AffineTransform;
+import java.awt.geom.Rectangle2D;
 import java.util.List;
 
 public class Player {
@@ -160,6 +161,10 @@ public class Player {
     }
 
     public void draw(Graphics2D g2d, GravityDir gravityDir) {
+        draw(g2d, gravityDir, new Color(255, 209, 120), new Color(255, 170, 64));
+    }
+
+    public void draw(Graphics2D g2d, GravityDir gravityDir, Color top, Color bottom) {
         AffineTransform old = g2d.getTransform();
         java.awt.Stroke oldStroke = g2d.getStroke();
         double centerX = x + width / 2.0;
@@ -180,7 +185,7 @@ public class Player {
                 break;
         }
         g2d.rotate(angle, centerX, centerY);
-        GradientPaint suit = new GradientPaint((float) x, (float) y, new Color(255, 209, 120), (float) (x + width), (float) (y + height), new Color(255, 170, 64));
+        GradientPaint suit = new GradientPaint((float) x, (float) y, top, (float) (x + width), (float) (y + height), bottom);
         g2d.setPaint(suit);
         g2d.fillRoundRect((int) x, (int) y, width, height, 10, 10);
         g2d.setColor(new Color(255, 255, 255, 70));
@@ -225,5 +230,9 @@ public class Player {
 
     public boolean isGrounded() {
         return grounded;
+    }
+
+    public Rectangle2D getBounds() {
+        return new Rectangle2D.Double(x, y, width, height);
     }
 }
