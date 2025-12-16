@@ -15,16 +15,26 @@ import java.util.List;
 public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private static final int WIDTH = 960;
     private static final int HEIGHT = 540;
+    private static final int PLAYER_W = 24;
+    private static final int PLAYER_H = 38;
+    private static final int KILL_PLANE_PADDING = 400;
+    private static final double WARP_COOLDOWN = 0.20;
+    private static final double INVERT_DURATION = 1.2;
     private static final double FRICTION = 0.85;
     private static final int FLOOR_HEIGHT = 60;
 
     private final Timer timer;
     private final Player player;
     private final List<Platform> platforms;
+    private final java.awt.geom.Point2D.Double spawnPoint;
+    private java.awt.geom.Point2D.Double lastSafeGroundedPos;
+    private enum Edge { LEFT, RIGHT, TOP, BOTTOM }
     private boolean leftPressed;
     private boolean rightPressed;
     private boolean jumpPressed;
     private boolean jumpHeld;
+    private double warpCooldownTimer;
+    private double invertControlsTimer;
 
     public GamePanel() {
         setPreferredSize(new Dimension(WIDTH, HEIGHT));
@@ -32,7 +42,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         setFocusable(true);
         addKeyListener(this);
 
-        player = new Player(80, HEIGHT - FLOOR_HEIGHT - 60, 36, 48);
+        spawnPoint = new java.awt.geom.Point2D.Double(80, HEIGHT - FLOOR_HEIGHT - PLAYER_H - 12);
+        lastSafeGroundedPos = new java.awt.geom.Point2D.Double(spawnPoint.x, spawnPoint.y);
+        player = new Player(spawnPoint.x, spawnPoint.y, PLAYER_W, PLAYER_H);
         platforms = buildPlatforms();
         timer = new Timer(16, this);
     }
@@ -54,16 +66,35 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
     @Override
     public void actionPerformed(ActionEvent e) {
+        double dt = 0.016;
+        if (warpCooldownTimer > 0) {
+            warpCooldownTimer = Math.max(0, warpCooldownTimer - dt);
+        }
+        if (invertControlsTimer > 0) {
+            invertControlsTimer = Math.max(0, invertControlsTimer - dt);
+        }
         handleInput();
         player.applyPhysics(platforms);
+        if (player.isGrounded()) {
+            lastSafeGroundedPos = new java.awt.geom.Point2D.Double(player.getX(), player.getY());
+        }
+        handleWarp();
+        handleKillPlane();
         repaint();
     }
 
     private void handleInput() {
         double moveSpeed = 0.9;
-        if (leftPressed && !rightPressed) {
+        boolean moveLeft = leftPressed;
+        boolean moveRight = rightPressed;
+        if (invertControlsTimer > 0) {
+            boolean temp = moveLeft;
+            moveLeft = moveRight;
+            moveRight = temp;
+        }
+        if (moveLeft && !moveRight) {
             player.addVelocity(-moveSpeed, 0);
-        } else if (rightPressed && !leftPressed) {
+        } else if (moveRight && !moveLeft) {
             player.addVelocity(moveSpeed, 0);
         } else {
             player.applyFriction(FRICTION);
@@ -73,6 +104,128 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             player.jump();
         }
         jumpHeld = jumpPressed;
+    }
+
+    private void handleKillPlane() {
+        if (player.getY() > HEIGHT + KILL_PLANE_PADDING) {
+            java.awt.geom.Point2D.Double fallback = lastSafeGroundedPos != null ? lastSafeGroundedPos : spawnPoint;
+            player.setPosition(fallback.x, fallback.y);
+            player.resetVelocity();
+            warpCooldownTimer = 0;
+            invertControlsTimer = 0;
+        }
+    }
+
+    private void handleWarp() {
+        if (warpCooldownTimer > 0) {
+            return;
+        }
+
+        double px = player.getX();
+        double py = player.getY();
+        double pw = player.getWidth();
+        double ph = player.getHeight();
+        double viewLeft = 0;
+        double viewTop = 0;
+        double viewRight = WIDTH;
+        double viewBottom = HEIGHT;
+        double margin = 4;
+        Edge exitEdge = null;
+
+        if (px + pw < viewLeft) {
+            exitEdge = Edge.LEFT;
+        } else if (px > viewRight) {
+            exitEdge = Edge.RIGHT;
+        } else if (py + ph < viewTop) {
+            exitEdge = Edge.TOP;
+        } else if (py > viewBottom) {
+            exitEdge = Edge.BOTTOM;
+        }
+
+        if (exitEdge == null) {
+            return;
+        }
+
+        double newX = px;
+        double newY = py;
+        double newVelX = player.getVelX();
+        double newVelY = player.getVelY();
+        double normalX = 0;
+        double normalY = 0;
+
+        switch (exitEdge) {
+            case LEFT:
+                double tLeft = clamp((py - viewTop) / (viewBottom - viewTop), 0, 1);
+                newX = clamp(viewLeft + tLeft * (viewRight - viewLeft), viewLeft + margin, viewRight - pw - margin);
+                newY = viewTop + margin;
+                double tempVelLX = newVelX;
+                newVelX = newVelY;
+                newVelY = -tempVelLX;
+                normalY = 1;
+                break;
+            case RIGHT:
+                double tRight = clamp((py - viewTop) / (viewBottom - viewTop), 0, 1);
+                newX = clamp(viewLeft + tRight * (viewRight - viewLeft), viewLeft + margin, viewRight - pw - margin);
+                newY = viewBottom - ph - margin;
+                double tempVelRX = newVelX;
+                newVelX = -newVelY;
+                newVelY = tempVelRX;
+                normalY = -1;
+                break;
+            case TOP:
+                double tTop = clamp((px - viewLeft) / (viewRight - viewLeft), 0, 1);
+                newY = clamp(viewTop + tTop * (viewBottom - viewTop), viewTop + margin, viewBottom - ph - margin);
+                newX = viewRight - pw - margin;
+                double tempVelTY = newVelY;
+                newVelY = newVelX;
+                newVelX = -tempVelTY;
+                normalX = -1;
+                break;
+            case BOTTOM:
+                double tBottom = clamp((px - viewLeft) / (viewRight - viewLeft), 0, 1);
+                newY = clamp(viewTop + tBottom * (viewBottom - viewTop), viewTop + margin, viewBottom - ph - margin);
+                newX = viewLeft + margin;
+                double tempVelBY = newVelY;
+                newVelY = -newVelX;
+                newVelX = tempVelBY;
+                normalX = 1;
+                break;
+        }
+
+        player.setPosition(newX, newY);
+        player.setVelocity(newVelX, newVelY);
+        resolvePostWarpOverlap(normalX, normalY);
+        warpCooldownTimer = WARP_COOLDOWN;
+        invertControlsTimer = INVERT_DURATION;
+    }
+
+    private void resolvePostWarpOverlap(double normalX, double normalY) {
+        double step = 2.0;
+        int attempts = 8;
+        while (collidesWithPlatform(player.getX(), player.getY()) && attempts-- > 0) {
+            player.setPosition(player.getX() + normalX * step, player.getY() + normalY * step);
+        }
+
+        if (collidesWithPlatform(player.getX(), player.getY())) {
+            java.awt.geom.Point2D.Double fallback = lastSafeGroundedPos != null ? lastSafeGroundedPos : spawnPoint;
+            player.setPosition(fallback.x, fallback.y);
+            player.resetVelocity();
+        }
+    }
+
+    private boolean collidesWithPlatform(double px, double py) {
+        for (Platform p : platforms) {
+            boolean overlapX = px + player.getWidth() > p.getX() && px < p.getX() + p.getWidth();
+            boolean overlapY = py + player.getHeight() > p.getY() && py < p.getY() + p.getHeight();
+            if (overlapX && overlapY) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     @Override
@@ -112,6 +265,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.drawString("Controls: A/D to move, W or Space to jump", 14, 22);
         g2d.drawString("Position: (" + (int) player.getX() + ", " + (int) player.getY() + ")", 14, 42);
         g2d.drawString("Velocity: (" + String.format("%.2f", player.getVelX()) + ", " + String.format("%.2f", player.getVelY()) + ")", 14, 62);
+        if (invertControlsTimer > 0) {
+            String confusion = String.format("WARP CONFUSION: %.1fs", invertControlsTimer);
+            g2d.drawString(confusion, 14, 82);
+        }
     }
 
     @Override
