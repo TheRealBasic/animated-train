@@ -17,10 +17,15 @@ public class FluxOrb {
             return;
         }
         int diameter = radius * 2;
-        g2d.setColor(new Color(140, 234, 255));
+        g2d.setColor(new Color(120, 226, 255, 100));
+        g2d.fillOval((int) (position.x - radius * 1.6), (int) (position.y - radius * 1.6), (int) (diameter * 1.6), (int) (diameter * 1.6));
+
+        g2d.setColor(new Color(180, 246, 255));
         g2d.fillOval((int) (position.x - radius), (int) (position.y - radius), diameter, diameter);
-        g2d.setColor(new Color(40, 140, 200));
+        g2d.setColor(new Color(0, 140, 200));
         g2d.drawOval((int) (position.x - radius), (int) (position.y - radius), diameter, diameter);
+        g2d.setColor(new Color(255, 255, 255, 120));
+        g2d.fillOval((int) (position.x - radius / 1.8), (int) (position.y - radius / 1.8), (int) (diameter / 1.8), (int) (diameter / 1.8));
     }
 
     public boolean checkCollected(Player player) {

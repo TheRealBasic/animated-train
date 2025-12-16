@@ -17,15 +17,17 @@ public class ExitGate {
 
     public void draw(Graphics2D g2d) {
         if (!unlocked) {
-            g2d.setColor(new Color(120, 120, 150, 120));
-            g2d.fillRect((int) x, (int) y, width, height);
-            g2d.setColor(new Color(80, 80, 120));
-            g2d.drawRect((int) x, (int) y, width, height);
+            g2d.setColor(new Color(90, 120, 180, 80));
+            g2d.fillRoundRect((int) x, (int) y, width, height, 12, 12);
+            g2d.setColor(new Color(80, 120, 200, 180));
+            g2d.drawRoundRect((int) x, (int) y, width, height, 12, 12);
         } else {
+            g2d.setColor(new Color(80, 230, 200, 110));
+            g2d.fillRoundRect((int) x - 6, (int) y - 6, width + 12, height + 12, 14, 14);
             g2d.setColor(new Color(166, 255, 200));
-            g2d.fillRect((int) x, (int) y, width, height);
-            g2d.setColor(new Color(66, 180, 120));
-            g2d.drawRect((int) x, (int) y, width, height);
+            g2d.fillRoundRect((int) x, (int) y, width, height, 12, 12);
+            g2d.setColor(new Color(66, 180, 140));
+            g2d.drawRoundRect((int) x, (int) y, width, height, 12, 12);
         }
     }
 
