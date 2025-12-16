@@ -9,6 +9,7 @@ public class Settings {
     private int masterVolume = 80;
     private double screenScale = 1.0;
     private boolean showDebugHud = false;
+    private boolean reducedEffects = false;
     private int keyLeft = java.awt.event.KeyEvent.VK_A;
     private int keyRight = java.awt.event.KeyEvent.VK_D;
     private int keyJump = java.awt.event.KeyEvent.VK_SPACE;
@@ -25,6 +26,7 @@ public class Settings {
             settings.masterVolume = Integer.parseInt(props.getProperty("masterVolume", "80"));
             settings.screenScale = Double.parseDouble(props.getProperty("screenScale", "1.0"));
             settings.showDebugHud = Boolean.parseBoolean(props.getProperty("showDebugHud", "false"));
+            settings.reducedEffects = Boolean.parseBoolean(props.getProperty("reducedEffects", "false"));
             settings.keyLeft = Integer.parseInt(props.getProperty("keyLeft", Integer.toString(settings.keyLeft)));
             settings.keyRight = Integer.parseInt(props.getProperty("keyRight", Integer.toString(settings.keyRight)));
             settings.keyJump = Integer.parseInt(props.getProperty("keyJump", Integer.toString(settings.keyJump)));
@@ -43,6 +45,7 @@ public class Settings {
         props.setProperty("masterVolume", Integer.toString(masterVolume));
         props.setProperty("screenScale", Double.toString(screenScale));
         props.setProperty("showDebugHud", Boolean.toString(showDebugHud));
+        props.setProperty("reducedEffects", Boolean.toString(reducedEffects));
         props.setProperty("keyLeft", Integer.toString(keyLeft));
         props.setProperty("keyRight", Integer.toString(keyRight));
         props.setProperty("keyJump", Integer.toString(keyJump));
@@ -74,6 +77,14 @@ public class Settings {
 
     public void setShowDebugHud(boolean showDebugHud) {
         this.showDebugHud = showDebugHud;
+    }
+
+    public boolean isReducedEffects() {
+        return reducedEffects;
+    }
+
+    public void setReducedEffects(boolean reducedEffects) {
+        this.reducedEffects = reducedEffects;
     }
 
     public int getKeyLeft() {
