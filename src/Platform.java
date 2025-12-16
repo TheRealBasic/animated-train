@@ -1,6 +1,6 @@
 public class Platform {
-    private final double x;
-    private final double y;
+    private double x;
+    private double y;
     private final int width;
     private final int height;
 
@@ -25,5 +25,10 @@ public class Platform {
 
     public int getHeight() {
         return height;
+    }
+
+    public void setPosition(double x, double y) {
+        this.x = x;
+        this.y = y;
     }
 }
