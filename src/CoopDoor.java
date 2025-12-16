@@ -24,6 +24,10 @@ public class CoopDoor {
         g2d.draw(bounds);
     }
 
+    public boolean isOpen() {
+        return open;
+    }
+
     public boolean blocks(Player player) {
         return !open && bounds.intersects(player.getBounds());
     }
