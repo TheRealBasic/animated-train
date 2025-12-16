@@ -1,7 +1,7 @@
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.Clip;
 import javax.sound.sampled.LineUnavailableException;
-import javax.sound.sampled.SourceDataLine;
 
 public final class SoundManager {
     private static final AudioFormat FORMAT = new AudioFormat(44100, 8, 1, true, true);
@@ -52,11 +52,18 @@ public final class SoundManager {
     }
 
     private static void playBuffer(byte[] buffer) {
-        try (SourceDataLine line = AudioSystem.getSourceDataLine(FORMAT)) {
-            line.open(FORMAT);
-            line.start();
-            line.write(buffer, 0, buffer.length);
-            line.drain();
+        try {
+            Clip clip = AudioSystem.getClip();
+            clip.open(FORMAT, buffer, 0, buffer.length);
+            clip.start();
+            long playTimeMs = Math.round(buffer.length * 1000.0 / FORMAT.getSampleRate());
+            new Thread(() -> {
+                try {
+                    Thread.sleep(playTimeMs);
+                } catch (InterruptedException ignored) {
+                }
+                clip.close();
+            }, "sfx-" + System.nanoTime()).start();
         } catch (LineUnavailableException ignored) {
         }
     }
