@@ -9,16 +9,19 @@ public class SaveGame {
 
     public static class SaveData {
         public int currentLevelIndex;
+        public int unlockedLevels;
         public double[] bestTimes;
+        public String[] bestMedals;
+        public int[] bestDeaths;
     }
 
     public static SaveData load(int levelCount) {
         SaveData data = new SaveData();
         data.currentLevelIndex = 0;
+        data.unlockedLevels = 1;
         data.bestTimes = new double[levelCount];
-        for (int i = 0; i < data.bestTimes.length; i++) {
-            data.bestTimes[i] = 0;
-        }
+        data.bestMedals = new String[levelCount];
+        data.bestDeaths = new int[levelCount];
         File file = new File(SAVE_PATH);
         if (!file.exists()) {
             return data;
@@ -27,14 +30,14 @@ public class SaveGame {
         try (FileInputStream in = new FileInputStream(file)) {
             props.load(in);
             data.currentLevelIndex = Integer.parseInt(props.getProperty("currentLevelIndex", "0"));
-            for (int i = 0; i < data.bestTimes.length; i++) {
-                String key = "bestTime" + i;
-                if (props.containsKey(key)) {
-                    data.bestTimes[i] = Double.parseDouble(props.getProperty(key, "0"));
-                }
+            data.unlockedLevels = Integer.parseInt(props.getProperty("unlockedLevels", "1"));
+            for (int i = 0; i < levelCount; i++) {
+                data.bestTimes[i] = Double.parseDouble(props.getProperty("bestTime" + i, "0"));
+                data.bestMedals[i] = props.getProperty("bestMedal" + i, "");
+                data.bestDeaths[i] = Integer.parseInt(props.getProperty("bestDeaths" + i, "0"));
             }
         } catch (IOException | NumberFormatException ex) {
-            // default stays
+            // keep defaults
         }
         return data;
     }
@@ -46,8 +49,11 @@ public class SaveGame {
         }
         Properties props = new Properties();
         props.setProperty("currentLevelIndex", Integer.toString(data.currentLevelIndex));
+        props.setProperty("unlockedLevels", Integer.toString(data.unlockedLevels));
         for (int i = 0; i < data.bestTimes.length; i++) {
             props.setProperty("bestTime" + i, Double.toString(data.bestTimes[i]));
+            props.setProperty("bestMedal" + i, data.bestMedals[i] == null ? "" : data.bestMedals[i]);
+            props.setProperty("bestDeaths" + i, Integer.toString(data.bestDeaths[i]));
         }
         try (FileOutputStream out = new FileOutputStream(SAVE_PATH)) {
             props.store(out, "Platformer save");

@@ -30,6 +30,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private final EnumMap<GravityDir, Point2D.Double> lastSafeGroundedPos;
     private final LevelManager levelManager;
     private List<Platform> platforms;
+    private List<MovingPlatform> movers;
+    private List<Spike> spikes;
+    private List<Checkpoint> checkpoints;
     private List<FluxOrb> orbs;
     private ExitGate exitGate;
     private ObjectiveManager objectiveManager;
@@ -48,20 +51,27 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private int pauseMenuIndex = 0;
     private int settingsMenuIndex = 0;
     private int levelCompleteIndex = 0;
+    private int levelSelectIndex = 0;
     private int lastCompletedIndex = 0;
     private boolean waitingForBinding = false;
     private String bindingTarget = "";
     private double scale;
     private GameState previousStateBeforeSettings = GameState.MAIN_MENU;
+    private Point2D.Double respawnPosition;
+    private GravityDir respawnGravity;
+    private int deathCount;
+    private long lastTickNanos = System.nanoTime();
 
     private enum Edge { LEFT, RIGHT, TOP, BOTTOM }
 
     private enum GameState {
         MAIN_MENU,
         SETTINGS,
+        LEVEL_SELECT,
         IN_GAME,
         PAUSE,
-        LEVEL_COMPLETE
+        LEVEL_COMPLETE,
+        CREDITS
     }
 
     public GamePanel() {
@@ -94,6 +104,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             return;
         }
         platforms = data.getPlatforms();
+        movers = data.getMovers();
+        spikes = data.getSpikes();
+        checkpoints = data.getCheckpoints();
         orbs = new ArrayList<>();
         for (Point2D.Double pos : data.getOrbPositions()) {
             orbs.add(new FluxOrb(pos, 12));
@@ -106,6 +119,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         player.setPosition(spawn.x, spawn.y);
         player.resetVelocity();
         gravityDir = data.getSpawnGravity();
+        respawnPosition = new Point2D.Double(spawn.x, spawn.y);
+        respawnGravity = gravityDir;
+        deathCount = 0;
         lastSafeGroundedPos.clear();
         for (GravityDir dir : GravityDir.values()) {
             lastSafeGroundedPos.put(dir, new Point2D.Double(spawn.x, spawn.y));
@@ -115,19 +131,25 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
     @Override
     public void actionPerformed(ActionEvent e) {
-        double dt = 0.016;
+        long now = System.nanoTime();
+        double dt = (now - lastTickNanos) / 1_000_000_000.0;
+        dt = Math.min(dt, 0.05);
+        lastTickNanos = now;
         if (warpCooldownTimer > 0) {
             warpCooldownTimer = Math.max(0, warpCooldownTimer - dt);
         }
 
         if (gameState == GameState.IN_GAME) {
             handleInput();
-            player.applyPhysics(platforms, gravityDir);
+            updateMovingPlatforms(dt);
+            player.applyPhysics(getAllPlatforms(), gravityDir);
             if (player.isGrounded()) {
                 lastSafeGroundedPos.put(gravityDir, new Point2D.Double(player.getX(), player.getY()));
             }
             handleWarp();
             handleKillPlane();
+            handleCheckpoints();
+            handleHazards();
             objectiveManager.update(dt, player);
             if (exitGate.checkCollision(player)) {
                 onLevelComplete();
@@ -171,10 +193,25 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         double py = player.getY();
         boolean outOfBounds = px < -KILL_PADDING || px > BASE_WIDTH + KILL_PADDING || py < -KILL_PADDING || py > BASE_HEIGHT + KILL_PADDING;
         if (outOfBounds) {
-            Point2D.Double fallback = lastSafeGroundedPos.getOrDefault(gravityDir, new Point2D.Double(BASE_WIDTH / 2.0, BASE_HEIGHT / 2.0));
-            player.setPosition(fallback.x, fallback.y);
-            player.resetVelocity();
-            warpCooldownTimer = 0;
+            respawn();
+        }
+    }
+
+    private void handleHazards() {
+        for (Spike spike : spikes) {
+            if (spike.intersects(player)) {
+                respawn();
+                return;
+            }
+        }
+    }
+
+    private void handleCheckpoints() {
+        for (Checkpoint checkpoint : checkpoints) {
+            if (!checkpoint.isActivated() && checkpoint.check(player)) {
+                respawnPosition = new Point2D.Double(checkpoint.getPosition().x, checkpoint.getPosition().y);
+                respawnGravity = gravityDir;
+            }
         }
     }
 
@@ -235,6 +272,26 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         warpCooldownTimer = WARP_COOLDOWN;
     }
 
+    private void respawn() {
+        deathCount++;
+        player.setPosition(respawnPosition.x, respawnPosition.y);
+        player.resetVelocity();
+        gravityDir = respawnGravity;
+        warpCooldownTimer = 0;
+    }
+
+    private void updateMovingPlatforms(double dt) {
+        for (MovingPlatform mover : movers) {
+            mover.update(dt);
+        }
+    }
+
+    private List<Platform> getAllPlatforms() {
+        List<Platform> all = new ArrayList<>(platforms);
+        all.addAll(movers);
+        return all;
+    }
+
     private boolean collidesWithPlatform(double px, double py) {
         for (Platform p : platforms) {
             boolean overlapX = px + player.getWidth() > p.getX() && px < p.getX() + p.getWidth();
@@ -253,7 +310,11 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         if (best == 0 || elapsed < best) {
             saveData.bestTimes[lastCompletedIndex] = elapsed;
         }
+        String medal = determineMedal(elapsed, objectiveManager.getParTimeSeconds());
+        saveData.bestMedals[lastCompletedIndex] = medal;
+        saveData.bestDeaths[lastCompletedIndex] = (saveData.bestDeaths[lastCompletedIndex] == 0) ? deathCount : Math.min(saveData.bestDeaths[lastCompletedIndex], deathCount);
         if (lastCompletedIndex + 1 < levelManager.getLevelCount()) {
+            saveData.unlockedLevels = Math.max(saveData.unlockedLevels, lastCompletedIndex + 2);
             saveData.currentLevelIndex = lastCompletedIndex + 1;
         }
         SaveGame.save(saveData);
@@ -288,6 +349,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 drawTitle(g2d, "Settings");
                 drawSettingsMenu(g2d);
                 break;
+            case LEVEL_SELECT:
+                drawTitle(g2d, "Level Select");
+                drawLevelSelect(g2d);
+                break;
             case IN_GAME:
                 drawWorld(g2d);
                 drawHud(g2d);
@@ -300,6 +365,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             case LEVEL_COMPLETE:
                 drawWorld(g2d);
                 drawLevelComplete(g2d);
+                break;
+            case CREDITS:
+                drawCredits(g2d);
                 break;
         }
     }
@@ -326,15 +394,16 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private void drawMainMenu(Graphics2D g2d) {
         g2d.setFont(new Font("Consolas", Font.PLAIN, 20));
         String[] options = new String[]{
-                "Play",
+                "Continue",
                 "New Game",
+                "Level Select",
                 "Settings",
-                "Load Game",
+                "Credits",
                 "Quit"
         };
         int startY = 200;
         for (int i = 0; i < options.length; i++) {
-            boolean disabled = options[i].equals("Load Game") && !SaveGame.exists();
+            boolean disabled = options[i].equals("Continue") && !SaveGame.exists();
             g2d.setColor(mainMenuIndex == i ? new Color(190, 255, 180) : new Color(230, 235, 243));
             if (disabled) {
                 g2d.setColor(new Color(140, 150, 160));
@@ -371,12 +440,41 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
     }
 
+    private void drawLevelSelect(Graphics2D g2d) {
+        g2d.setFont(new Font("Consolas", Font.PLAIN, 18));
+        int startY = 200;
+        for (int i = 0; i < levelManager.getLevelCount(); i++) {
+            boolean locked = i >= saveData.unlockedLevels;
+            String label = (i + 1) + ". " + levelManager.getLevel(i).getName();
+            if (locked) {
+                label += " (Locked)";
+            }
+            g2d.setColor(levelSelectIndex == i ? new Color(190, 255, 180) : new Color(230, 235, 243));
+            if (locked) {
+                g2d.setColor(new Color(120, 130, 140));
+            }
+            int width = g2d.getFontMetrics().stringWidth(label);
+            g2d.drawString(label, (BASE_WIDTH - width) / 2, startY + i * 26);
+        }
+        drawControlHint(g2d, "Enter to play, Esc to back");
+    }
+
     private void drawWorld(Graphics2D g2d) {
         g2d.setColor(new Color(99, 209, 255));
         for (Platform platform : platforms) {
             g2d.fillRect((int) platform.getX(), (int) platform.getY(), platform.getWidth(), platform.getHeight());
         }
+        g2d.setColor(new Color(120, 200, 255));
+        for (MovingPlatform mover : movers) {
+            g2d.fillRect((int) mover.getX(), (int) mover.getY(), mover.getWidth(), mover.getHeight());
+        }
         exitGate.draw(g2d);
+        for (Checkpoint checkpoint : checkpoints) {
+            checkpoint.draw(g2d);
+        }
+        for (Spike spike : spikes) {
+            spike.draw(g2d);
+        }
         for (FluxOrb orb : orbs) {
             orb.draw(g2d);
         }
@@ -392,10 +490,11 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.drawString("Gravity: " + gravityDir.name(), 14, 62);
         g2d.drawString("Time: " + String.format("%.1fs", objectiveManager.getElapsedTime()), 14, 82);
         g2d.drawString("Par: " + String.format("%.1fs", objectiveManager.getParTimeSeconds()), 14, 102);
-        g2d.drawString("Controls: A/D move • Space jump • Warp edges flip gravity", 14, 122);
+        g2d.drawString("Deaths: " + deathCount, 14, 122);
+        g2d.drawString("Controls: A/D move • Space jump • Warp edges flip gravity", 14, 142);
         if (settings.isShowDebugHud()) {
-            g2d.drawString("Position: (" + (int) player.getX() + ", " + (int) player.getY() + ")", 14, 142);
-            g2d.drawString("Velocity: (" + String.format("%.2f", player.getVelX()) + ", " + String.format("%.2f", player.getVelY()) + ")", 14, 162);
+            g2d.drawString("Position: (" + (int) player.getX() + ", " + (int) player.getY() + ")", 14, 162);
+            g2d.drawString("Velocity: (" + String.format("%.2f", player.getVelX()) + ", " + String.format("%.2f", player.getVelY()) + ")", 14, 182);
         }
     }
 
@@ -430,12 +529,15 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.setFont(new Font("Consolas", Font.PLAIN, 18));
         g2d.drawString("Level: " + data.getName(), BASE_WIDTH / 2 - 120, 200);
         g2d.drawString("Time: " + String.format("%.1fs", elapsed) + (elapsed <= par ? " (PAR BEAT!)" : ""), BASE_WIDTH / 2 - 120, 230);
+        String medal = determineMedal(elapsed, par);
+        g2d.drawString("Medal: " + medal, BASE_WIDTH / 2 - 120, 260);
+        g2d.drawString("Deaths: " + deathCount, BASE_WIDTH / 2 - 120, 290);
         if (best > 0) {
-            g2d.drawString("Best: " + String.format("%.1fs", best), BASE_WIDTH / 2 - 120, 260);
+            g2d.drawString("Best: " + String.format("%.1fs", best), BASE_WIDTH / 2 - 120, 320);
         }
 
         String[] options = new String[]{"Next / Retry", "Main Menu"};
-        int startY = 310;
+        int startY = 360;
         for (int i = 0; i < options.length; i++) {
             g2d.setColor(levelCompleteIndex == i ? new Color(190, 255, 180) : new Color(230, 235, 243));
             int width = g2d.getFontMetrics().stringWidth(options[i]);
@@ -449,6 +551,23 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.drawString(hint, (BASE_WIDTH - width) / 2, BASE_HEIGHT - 40);
     }
 
+    private void drawCredits(Graphics2D g2d) {
+        drawTitle(g2d, "Gravity Warp Trials");
+        g2d.setFont(new Font("Consolas", Font.PLAIN, 18));
+        g2d.setColor(new Color(230, 235, 243));
+        String[] lines = {
+                "Programming & Design: Solo Dev",
+                "Engine: Custom Java2D", 
+                "Thanks for playing!"
+        };
+        int startY = 220;
+        for (int i = 0; i < lines.length; i++) {
+            int width = g2d.getFontMetrics().stringWidth(lines[i]);
+            g2d.drawString(lines[i], (BASE_WIDTH - width) / 2, startY + i * 28);
+        }
+        drawControlHint(g2d, "Press Esc or Enter to return");
+    }
+
     @Override
     public void keyPressed(KeyEvent e) {
         if (waitingForBinding) {
@@ -457,7 +576,20 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
 
         if (gameState == GameState.MAIN_MENU) {
-            handleMenuNavigation(e, 5, () -> handleMainMenuSelect(mainMenuIndex));
+            handleMenuNavigation(e, 6, () -> handleMainMenuSelect(mainMenuIndex));
+            return;
+        }
+        if (gameState == GameState.CREDITS) {
+            if (e.getKeyCode() == KeyEvent.VK_ENTER || e.getKeyCode() == KeyEvent.VK_ESCAPE) {
+                gameState = GameState.MAIN_MENU;
+            }
+            return;
+        }
+        if (gameState == GameState.LEVEL_SELECT) {
+            handleMenuNavigation(e, levelManager.getLevelCount(), () -> handleLevelSelect(levelSelectIndex));
+            if (e.getKeyCode() == KeyEvent.VK_ESCAPE) {
+                gameState = GameState.MAIN_MENU;
+            }
             return;
         }
         if (gameState == GameState.SETTINGS) {
@@ -515,6 +647,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 case LEVEL_COMPLETE:
                     levelCompleteIndex = (levelCompleteIndex - 1 + itemCount) % itemCount;
                     break;
+                case LEVEL_SELECT:
+                    levelSelectIndex = (levelSelectIndex - 1 + itemCount) % itemCount;
+                    break;
             }
         }
         if (e.getKeyCode() == KeyEvent.VK_S || e.getKeyCode() == KeyEvent.VK_DOWN) {
@@ -531,6 +666,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 case LEVEL_COMPLETE:
                     levelCompleteIndex = (levelCompleteIndex + 1) % itemCount;
                     break;
+                case LEVEL_SELECT:
+                    levelSelectIndex = (levelSelectIndex + 1) % itemCount;
+                    break;
             }
         }
         if (e.getKeyCode() == KeyEvent.VK_ENTER) {
@@ -540,8 +678,8 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
     private void handleMainMenuSelect(int index) {
         switch (index) {
-            case 0: // Play
-                loadLevel(saveData.currentLevelIndex);
+            case 0: // Continue
+                loadLevel(Math.min(saveData.currentLevelIndex, levelManager.getLevelCount() - 1));
                 gameState = GameState.IN_GAME;
                 break;
             case 1: // New Game
@@ -550,19 +688,19 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 loadLevel(0);
                 gameState = GameState.IN_GAME;
                 break;
-            case 2: // Settings
+            case 2: // Level Select
+                gameState = GameState.LEVEL_SELECT;
+                levelSelectIndex = 0;
+                break;
+            case 3: // Settings
                 previousStateBeforeSettings = GameState.MAIN_MENU;
                 gameState = GameState.SETTINGS;
                 settingsMenuIndex = 0;
                 break;
-            case 3: // Load Game
-                if (SaveGame.exists()) {
-                    saveData = SaveGame.load(levelManager.getLevelCount());
-                    loadLevel(saveData.currentLevelIndex);
-                    gameState = GameState.IN_GAME;
-                }
+            case 4: // Credits
+                gameState = GameState.CREDITS;
                 break;
-            case 4: // Quit
+            case 5: // Quit
                 System.exit(0);
                 break;
         }
@@ -590,6 +728,15 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
     }
 
+    private void handleLevelSelect(int index) {
+        if (index < saveData.unlockedLevels) {
+            saveData.currentLevelIndex = index;
+            SaveGame.save(saveData);
+            loadLevel(index);
+            gameState = GameState.IN_GAME;
+        }
+    }
+
     private void handleLevelCompleteSelect(int index) {
         switch (index) {
             case 0:
@@ -599,6 +746,19 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 gameState = GameState.MAIN_MENU;
                 break;
         }
+    }
+
+    private String determineMedal(double elapsed, double par) {
+        if (elapsed <= par) {
+            return "Gold";
+        }
+        if (elapsed <= par * 1.25) {
+            return "Silver";
+        }
+        if (elapsed <= par * 1.5) {
+            return "Bronze";
+        }
+        return "None";
     }
 
     private void adjustSetting(int delta) {

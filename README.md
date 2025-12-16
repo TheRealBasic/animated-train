@@ -1,6 +1,6 @@
-# Java Platform Movement Scaffold
+# Gravity Warp Trials
 
-A standalone Java 2D sandbox that opens a desktop window with a controllable character and simple platforms. Movement, jumping, and collision are handled with lightweight physics so you can extend the project into a fuller game without external libraries.
+A standalone Java 2D platformer built on Swing/Java2D featuring a gravity-warping mechanic. Move, jump, collect Flux Orbs, hit checkpoints, dodge hazards, and clear ten handcrafted levels with par times and medals.
 
 ## Running the program
 
@@ -21,24 +21,18 @@ No build tools or package managers are required—the project uses only the Java
 
 ## Controls
 
-- Move: `A` / `D` or Arrow Left / Arrow Right
-- Jump: `W`, `Space`, or Arrow Up
+- Move: `A` / `D` or Arrow Left / Arrow Right (rebindable in Settings)
+- Jump: `W`, `Space`, or Arrow Up (rebindable)
+- Pause: `Esc`
 
-A heads-up display inside the window shows your current position and velocity for quick iteration on physics tweaks.
+## Game flow
 
-## Project structure
+- Main Menu → Continue/New Game/Level Select/Settings/Credits.
+- Collect all Flux Orbs in a level to unlock the exit gate.
+- Checkpoints update your respawn position and gravity direction.
+- Spikes and the kill plane cause a respawn and increment the death counter.
+- Clear a level to earn a medal (Gold/Silver/Bronze) based on par time and unlock the next stage.
 
-```
-src/
-  GamePanel.java  # Swing panel with the game loop, rendering, and input handling
-  Main.java       # Application entry point that boots the window and starts the loop
-  Platform.java   # Simple platform data class
-  Player.java     # Physics, collisions, and drawing for the player
-```
+## Save data
 
-## Next steps
-
-- Add sprites, textures, or parallax backgrounds for visual polish.
-- Expand the platform layout and introduce hazards or collectibles.
-- Extract physics constants (gravity, jump force, friction) into a config class for easy tuning.
-- Replace the Swing timer with a more advanced game loop if you need finer control over delta time.
+Save data and settings are stored under `save/` in the project directory. Level data lives in `assets/levels/*.json` and can be edited or extended easily.

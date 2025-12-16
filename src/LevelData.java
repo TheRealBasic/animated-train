@@ -5,6 +5,9 @@ import java.util.List;
 public class LevelData {
     private final String name;
     private final List<Platform> platforms;
+    private final List<MovingPlatform> movers;
+    private final List<Spike> spikes;
+    private final List<Checkpoint> checkpoints;
     private final List<Point2D.Double> orbPositions;
     private final double exitGateX;
     private final double exitGateY;
@@ -17,6 +20,9 @@ public class LevelData {
     public LevelData(String name,
                      List<Platform> platforms,
                      List<Point2D.Double> orbPositions,
+                     List<MovingPlatform> movers,
+                     List<Spike> spikes,
+                     List<Checkpoint> checkpoints,
                      double exitGateX,
                      double exitGateY,
                      int exitGateWidth,
@@ -26,6 +32,9 @@ public class LevelData {
                      double parTimeSeconds) {
         this.name = name;
         this.platforms = new ArrayList<>(platforms);
+        this.movers = new ArrayList<>(movers);
+        this.spikes = new ArrayList<>(spikes);
+        this.checkpoints = new ArrayList<>(checkpoints);
         this.orbPositions = new ArrayList<>(orbPositions);
         this.exitGateX = exitGateX;
         this.exitGateY = exitGateY;
@@ -42,6 +51,18 @@ public class LevelData {
 
     public List<Platform> getPlatforms() {
         return new ArrayList<>(platforms);
+    }
+
+    public List<MovingPlatform> getMovers() {
+        return new ArrayList<>(movers);
+    }
+
+    public List<Spike> getSpikes() {
+        return new ArrayList<>(spikes);
+    }
+
+    public List<Checkpoint> getCheckpoints() {
+        return new ArrayList<>(checkpoints);
     }
 
     public List<Point2D.Double> getOrbPositions() {

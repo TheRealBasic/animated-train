@@ -1,0 +1,49 @@
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.geom.Point2D;
+
+public class Checkpoint {
+    private final Point2D.Double position;
+    private final int radius;
+    private boolean activated;
+
+    public Checkpoint(Point2D.Double position, int radius) {
+        this.position = position;
+        this.radius = radius;
+    }
+
+    public boolean check(Player player) {
+        double px = player.getX();
+        double py = player.getY();
+        double pw = player.getWidth();
+        double ph = player.getHeight();
+        double closestX = clamp(position.x, px, px + pw);
+        double closestY = clamp(position.y, py, py + ph);
+        double dx = position.x - closestX;
+        double dy = position.y - closestY;
+        if (dx * dx + dy * dy <= radius * radius) {
+            activated = true;
+            return true;
+        }
+        return false;
+    }
+
+    public void draw(Graphics2D g2d) {
+        g2d.setColor(activated ? new Color(168, 255, 190) : new Color(110, 160, 200));
+        g2d.fillOval((int) (position.x - radius), (int) (position.y - radius), radius * 2, radius * 2);
+        g2d.setColor(new Color(40, 80, 120));
+        g2d.drawOval((int) (position.x - radius), (int) (position.y - radius), radius * 2, radius * 2);
+    }
+
+    private double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    public Point2D.Double getPosition() {
+        return position;
+    }
+
+    public boolean isActivated() {
+        return activated;
+    }
+}
