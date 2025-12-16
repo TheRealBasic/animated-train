@@ -29,14 +29,23 @@ public class Checkpoint {
     }
 
     public void draw(Graphics2D g2d) {
-        Color aura = activated ? new Color(140, 255, 200, 120) : new Color(90, 150, 220, 110);
-        g2d.setColor(aura);
-        g2d.fillOval((int) (position.x - radius * 1.6), (int) (position.y - radius * 1.6), (int) (radius * 3.2), (int) (radius * 3.2));
+        int x = (int) (position.x - radius);
+        int y = (int) (position.y - radius);
+        int size = radius * 2;
 
-        g2d.setColor(activated ? new Color(180, 255, 210) : new Color(140, 190, 230));
-        g2d.fillOval((int) (position.x - radius), (int) (position.y - radius), radius * 2, radius * 2);
-        g2d.setColor(new Color(30, 70, 100));
-        g2d.drawOval((int) (position.x - radius), (int) (position.y - radius), radius * 2, radius * 2);
+        g2d.setColor(new Color(8, 16, 22, 140));
+        g2d.fillRect(x + 2, y + 2, size, size);
+
+        g2d.setColor(activated ? new Color(140, 240, 200) : new Color(120, 180, 240));
+        g2d.fillRect(x, y, size, size);
+        g2d.setColor(new Color(30, 60, 90));
+        g2d.drawRect(x, y, size, size);
+
+        g2d.setColor(new Color(220, 255, 255, 180));
+        g2d.fillRect(x + size / 2 - 2, y - 6, 4, 8);
+        g2d.fillRect(x + size / 2 - 2, y + size - 2, 4, 6);
+        g2d.fillRect(x - 6, y + size / 2 - 2, 8, 4);
+        g2d.fillRect(x + size - 2, y + size / 2 - 2, 6, 4);
     }
 
     private double clamp(double value, double min, double max) {

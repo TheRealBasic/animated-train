@@ -16,18 +16,29 @@ public class ExitGate {
     }
 
     public void draw(Graphics2D g2d) {
+        int ix = (int) x;
+        int iy = (int) y;
+        g2d.setColor(new Color(10, 14, 22, 140));
+        g2d.fillRect(ix + 2, iy + 2, width, height);
+
         if (!unlocked) {
-            g2d.setColor(new Color(90, 120, 180, 80));
-            g2d.fillRoundRect((int) x, (int) y, width, height, 12, 12);
-            g2d.setColor(new Color(80, 120, 200, 180));
-            g2d.drawRoundRect((int) x, (int) y, width, height, 12, 12);
+            g2d.setColor(new Color(68, 90, 140));
+            g2d.fillRect(ix, iy, width, height);
+            g2d.setColor(new Color(24, 34, 60));
+            g2d.drawRect(ix, iy, width, height);
         } else {
-            g2d.setColor(new Color(80, 230, 200, 110));
-            g2d.fillRoundRect((int) x - 6, (int) y - 6, width + 12, height + 12, 14, 14);
-            g2d.setColor(new Color(166, 255, 200));
-            g2d.fillRoundRect((int) x, (int) y, width, height, 12, 12);
-            g2d.setColor(new Color(66, 180, 140));
-            g2d.drawRoundRect((int) x, (int) y, width, height, 12, 12);
+            g2d.setColor(new Color(100, 240, 200, 80));
+            g2d.fillRect(ix - 4, iy - 4, width + 8, height + 8);
+            g2d.setColor(new Color(160, 255, 210));
+            g2d.fillRect(ix, iy, width, height);
+            g2d.setColor(new Color(40, 120, 100));
+            g2d.drawRect(ix, iy, width, height);
+
+            g2d.setColor(new Color(255, 255, 255, 200));
+            for (int px = ix + 4; px < ix + width; px += 6) {
+                g2d.fillRect(px, iy + 4, 3, 3);
+                g2d.fillRect(px, iy + height - 8, 3, 3);
+            }
         }
     }
 

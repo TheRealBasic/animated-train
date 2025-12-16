@@ -28,17 +28,19 @@ public class Spike {
     public void draw(Graphics2D g2d) {
         int teeth = Math.max(3, width / 14);
         int toothWidth = Math.max(8, width / teeth);
-        g2d.setColor(new Color(255, 120, 120, 220));
+        g2d.setColor(new Color(32, 12, 12, 140));
+        g2d.fillRect((int) x + 2, (int) y + 2, width, height);
+
+        g2d.setColor(new Color(240, 120, 120));
         for (int i = 0; i < teeth; i++) {
             int startX = (int) x + i * toothWidth;
-            int[] xs = {startX, startX + toothWidth / 2, startX + toothWidth};
-            int[] ys = {(int) (y + height), (int) y, (int) (y + height)};
-            g2d.fillPolygon(xs, ys, 3);
+            g2d.fillRect(startX, (int) y + height / 2, toothWidth - 2, height / 2);
+            g2d.fillRect(startX + (toothWidth - 4) / 2, (int) y, 4, height / 2);
         }
         java.awt.Stroke old = g2d.getStroke();
         g2d.setStroke(new BasicStroke(2f));
         g2d.setColor(new Color(140, 40, 40, 220));
-        g2d.drawLine((int) x, (int) (y + height), (int) (x + width), (int) (y + height));
+        g2d.drawRect((int) x, (int) y, width, height);
         g2d.setStroke(old);
     }
 }
