@@ -1,6 +1,7 @@
 import javax.swing.JPanel;
 import javax.swing.Timer;
 import javax.swing.SwingUtilities;
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
@@ -8,12 +9,13 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.GradientPaint;
 import java.awt.RenderingHints;
-import java.awt.BasicStroke;
+import java.awt.geom.AffineTransform;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.awt.geom.Point2D;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -82,6 +84,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private boolean waitingForLevelSync;
     private String directIpInput = "127.0.0.1";
     private final Random vhsNoise = new Random();
+    private double deathEffectTimer;
+    private double screenShakeTimer;
+    private double screenShakeStrength;
 
     private enum GameState {
         MAIN_MENU,
@@ -97,6 +102,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
     public GamePanel() {
         settings = Settings.load();
+        SoundManager.setMasterVolume(settings.getMasterVolume() / 100.0);
         scale = settings.getScreenScale();
         setPreferredSize(new Dimension((int) (BASE_WIDTH * scale), (int) (BASE_HEIGHT * scale)));
         setBackground(new Color(20, 26, 34));
@@ -196,6 +202,8 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             }
         }
 
+        updateEffects(dt);
+
         repaint();
     }
 
@@ -238,6 +246,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
         if (jumpPressed && !jumpHeld && player.isGrounded()) {
             player.jump(gravityDir);
+            SoundManager.playTone(880, 120, 0.4);
         }
         jumpHeld = jumpPressed;
     }
@@ -269,6 +278,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             if (orb.checkCollected(target)) {
                 if (localPlayer) {
                     localOrbMask |= (1L << i);
+                    SoundManager.playTone(1320, 160, 0.55);
                 } else {
                     remoteOrbMask |= (1L << i);
                 }
@@ -332,6 +342,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         player.setPosition(respawnPosition.x, respawnPosition.y);
         player.resetVelocity();
         gravityDir = respawnGravity;
+        deathEffectTimer = 1.0;
+        screenShakeTimer = 0.6;
+        screenShakeStrength = 8.0;
+        SoundManager.playNoise(220, 0.8);
     }
 
     private void updateMovingPlatforms(double dt) {
@@ -354,6 +368,15 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private void updateGravityCooldown(double dt) {
         if (gravityCooldownRemaining > 0) {
             gravityCooldownRemaining = Math.max(0, gravityCooldownRemaining - dt);
+        }
+    }
+
+    private void updateEffects(double dt) {
+        if (deathEffectTimer > 0) {
+            deathEffectTimer = Math.max(0, deathEffectTimer - dt);
+        }
+        if (screenShakeTimer > 0) {
+            screenShakeTimer = Math.max(0, screenShakeTimer - dt);
         }
     }
 
@@ -426,10 +449,21 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
-        Graphics2D g2d = (Graphics2D) g;
-        g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        g2d.scale(scale, scale);
+        BufferedImage scene = new BufferedImage(BASE_WIDTH, BASE_HEIGHT, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D sceneG = scene.createGraphics();
+        sceneG.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        renderScene(sceneG);
+        sceneG.dispose();
 
+        BufferedImage processed = applyScreenEffects(scene);
+
+        Graphics2D g2d = (Graphics2D) g;
+        g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        g2d.scale(scale, scale);
+        g2d.drawImage(processed, 0, 0, null);
+    }
+
+    private void renderScene(Graphics2D g2d) {
         drawBackground(g2d);
         switch (gameState) {
             case MAIN_MENU:
@@ -468,8 +502,69 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 drawCredits(g2d);
                 break;
         }
+    }
 
-        drawCrtOverlay(g2d);
+    private BufferedImage applyScreenEffects(BufferedImage source) {
+        int width = source.getWidth();
+        int height = source.getHeight();
+        BufferedImage distorted = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+
+        double cx = width / 2.0;
+        double cy = height / 2.0;
+        double fishEyeStrength = 0.18;
+        double aberration = 0.6 + 3.2 * Math.min(1.0, deathEffectTimer);
+        double wobble = 0.35 * Math.sin(System.nanoTime() / 1_000_000_000.0 * 4.0);
+        aberration += wobble;
+
+        double shakeDuration = 0.6;
+        double shakeScale = screenShakeTimer > 0 ? screenShakeStrength * (screenShakeTimer / shakeDuration) : 0.0;
+        double shakeX = (vhsNoise.nextDouble() * 2 - 1) * shakeScale;
+        double shakeY = (vhsNoise.nextDouble() * 2 - 1) * shakeScale;
+
+        for (int y = 0; y < height; y++) {
+            double dy = (y - cy - shakeY) / cy;
+            for (int x = 0; x < width; x++) {
+                double dx = (x - cx - shakeX) / cx;
+                double r = Math.sqrt(dx * dx + dy * dy);
+                double distort = 1 + fishEyeStrength * r * r;
+                double sampleX = cx + dx * distort * cx + shakeX;
+                double sampleY = cy + dy * distort * cy + shakeY;
+
+                int baseX = clampToInt(Math.round(sampleX), 0, width - 1);
+                int baseY = clampToInt(Math.round(sampleY), 0, height - 1);
+                int baseRgb = source.getRGB(baseX, baseY);
+                int alpha = (baseRgb >>> 24) & 0xFF;
+
+                int rSample = sampleChannel(source, sampleX + aberration, sampleY - aberration, width, height, 16);
+                int gSample = sampleChannel(source, sampleX, sampleY, width, height, 8);
+                int bSample = sampleChannel(source, sampleX - aberration, sampleY + aberration, width, height, 0);
+
+                int rgb = (alpha << 24) | (rSample << 16) | (gSample << 8) | bSample;
+                distorted.setRGB(x, y, rgb);
+            }
+        }
+
+        Graphics2D overlay = distorted.createGraphics();
+        overlay.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        drawCrtOverlay(overlay);
+        overlay.dispose();
+        return distorted;
+    }
+
+    private int sampleChannel(BufferedImage img, double sx, double sy, int width, int height, int shift) {
+        int x = clampToInt(Math.round(sx), 0, width - 1);
+        int y = clampToInt(Math.round(sy), 0, height - 1);
+        return (img.getRGB(x, y) >> shift) & 0xFF;
+    }
+
+    private int clampToInt(long value, int min, int max) {
+        if (value < min) {
+            return min;
+        }
+        if (value > max) {
+            return max;
+        }
+        return (int) value;
     }
 
     private void drawBackground(Graphics2D g2d) {
@@ -495,6 +590,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private void drawCrtOverlay(Graphics2D g2d) {
+        AffineTransform oldTransform = g2d.getTransform();
         double t = System.nanoTime() / 1_000_000_000.0;
         double flicker = 0.85 + 0.15 * Math.sin(t * 8.0);
         int jitter = (int) (Math.sin(t * 7.3) * 2);
@@ -538,7 +634,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.fillRect(0, 0, BASE_WIDTH, 14);
         g2d.fillRect(0, BASE_HEIGHT - 14, BASE_WIDTH, 14);
 
-        g2d.translate(-jitter, 0);
+        g2d.setTransform(oldTransform);
     }
 
     private void drawTitle(Graphics2D g2d, String text) {
@@ -1159,6 +1255,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         switch (settingsMenuIndex) {
             case 0:
                 settings.setMasterVolume(settings.getMasterVolume() + delta * 5);
+                SoundManager.setMasterVolume(settings.getMasterVolume() / 100.0);
                 settings.save();
                 break;
             case 1:
