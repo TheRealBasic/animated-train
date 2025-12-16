@@ -41,9 +41,6 @@ public class Player {
         }
 
         double nextX = x + velX;
-        double nextY = y + velY;
-
-        // Horizontal collisions
         Platform horizontalHit = collide(nextX, y, platforms);
         if (horizontalHit != null) {
             if (velX > 0) {
@@ -54,7 +51,7 @@ public class Player {
             velX = 0;
         }
 
-        // Vertical collisions
+        double nextY = y + velY;
         Platform verticalHit = collide(nextX, nextY, platforms);
         if (verticalHit != null) {
             if (velY > 0) {
@@ -88,6 +85,20 @@ public class Player {
         grounded = false;
     }
 
+    public void setPosition(double newX, double newY) {
+        this.x = newX;
+        this.y = newY;
+    }
+
+    public void setVelocity(double newVelX, double newVelY) {
+        this.velX = newVelX;
+        this.velY = newVelY;
+    }
+
+    public void resetVelocity() {
+        setVelocity(0, 0);
+    }
+
     public void draw(Graphics2D g2d) {
         g2d.setColor(new Color(255, 196, 84));
         g2d.fillRect((int) x, (int) y, width, height);
@@ -99,6 +110,14 @@ public class Player {
 
     public double getY() {
         return y;
+    }
+
+    public int getWidth() {
+        return width;
+    }
+
+    public int getHeight() {
+        return height;
     }
 
     public double getVelX() {
