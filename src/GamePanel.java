@@ -863,6 +863,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 case MAIN_MENU:
                     mainMenuIndex = (mainMenuIndex - 1 + itemCount) % itemCount;
                     break;
+                case MULTIPLAYER_MENU:
+                    multiplayerMenuIndex = (multiplayerMenuIndex - 1 + itemCount) % itemCount;
+                    break;
                 case SETTINGS:
                     settingsMenuIndex = (settingsMenuIndex - 1 + itemCount) % itemCount;
                     break;
@@ -881,6 +884,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             switch (gameState) {
                 case MAIN_MENU:
                     mainMenuIndex = (mainMenuIndex + 1) % itemCount;
+                    break;
+                case MULTIPLAYER_MENU:
+                    multiplayerMenuIndex = (multiplayerMenuIndex + 1) % itemCount;
                     break;
                 case SETTINGS:
                     settingsMenuIndex = (settingsMenuIndex + 1) % itemCount;
