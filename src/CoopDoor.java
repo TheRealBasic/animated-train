@@ -18,10 +18,18 @@ public class CoopDoor {
     }
 
     public void draw(Graphics2D g2d) {
-        g2d.setColor(open ? new Color(160, 255, 200, 120) : new Color(40, 60, 90, 200));
-        g2d.fill(bounds);
-        g2d.setColor(new Color(200, 240, 255));
-        g2d.draw(bounds);
+        int x = (int) bounds.x;
+        int y = (int) bounds.y;
+        int w = (int) bounds.width;
+        int h = (int) bounds.height;
+
+        g2d.setColor(new Color(12, 14, 22, 150));
+        g2d.fillRect(x + 2, y + 2, w, h);
+
+        g2d.setColor(open ? new Color(140, 240, 190) : new Color(48, 66, 98));
+        g2d.fillRect(x, y, w, h);
+        g2d.setColor(open ? new Color(20, 70, 60) : new Color(18, 26, 40));
+        g2d.drawRect(x, y, w, h);
     }
 
     public boolean isOpen() {

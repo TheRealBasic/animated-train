@@ -185,20 +185,26 @@ public class Player {
                 break;
         }
         g2d.rotate(angle, centerX, centerY);
-        GradientPaint suit = new GradientPaint((float) x, (float) y, top, (float) (x + width), (float) (y + height), bottom);
-        g2d.setPaint(suit);
-        g2d.fillRoundRect((int) x, (int) y, width, height, 10, 10);
-        g2d.setColor(new Color(255, 255, 255, 70));
-        g2d.fillRoundRect((int) x + 3, (int) y + 4, width - 6, Math.max(6, (int) (height / 3.5)), 8, 8);
+        g2d.setColor(new Color(12, 12, 12, 160));
+        g2d.fillRect((int) x + 2, (int) y + 2, width, height);
 
-        g2d.setStroke(new BasicStroke(2f));
-        g2d.setColor(new Color(60, 40, 20, 180));
-        g2d.drawRoundRect((int) x, (int) y, width, height, 10, 10);
+        g2d.setColor(top);
+        g2d.fillRect((int) x, (int) y, width, height);
+        g2d.setColor(bottom);
+        g2d.fillRect((int) x, (int) y + height / 2, width, height / 2);
 
-        g2d.setColor(new Color(40, 80, 120, 200));
-        g2d.fillRoundRect((int) x + 4, (int) y + height / 3, width - 8, height / 3, 8, 8);
-        g2d.setColor(new Color(140, 210, 255, 160));
-        g2d.fillRoundRect((int) x + 6, (int) y + height / 3 + 4, width - 14, height / 5, 6, 6);
+        g2d.setColor(new Color(20, 28, 40));
+        g2d.fillRect((int) x + 4, (int) y + height / 3, width - 8, height / 3);
+        g2d.setColor(new Color(160, 210, 240));
+        g2d.fillRect((int) x + 6, (int) y + height / 3 + 2, width - 12, height / 4);
+
+        g2d.setColor(new Color(250, 250, 250, 160));
+        for (int px = (int) x + 2; px < x + width - 2; px += 4) {
+            g2d.fillRect(px, (int) y + 3, 2, 2);
+        }
+
+        g2d.setColor(new Color(30, 30, 30));
+        g2d.drawRect((int) x, (int) y, width, height);
 
         g2d.setStroke(oldStroke);
         g2d.setTransform(old);

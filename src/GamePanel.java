@@ -451,16 +451,17 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         super.paintComponent(g);
         BufferedImage scene = new BufferedImage(BASE_WIDTH, BASE_HEIGHT, BufferedImage.TYPE_INT_ARGB);
         Graphics2D sceneG = scene.createGraphics();
-        sceneG.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        sceneG.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
         renderScene(sceneG);
         sceneG.dispose();
 
         BufferedImage processed = applyScreenEffects(scene);
 
         Graphics2D g2d = (Graphics2D) g;
-        g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
         g2d.scale(scale, scale);
         g2d.drawImage(processed, 0, 0, null);
+        drawCrtBezel(g2d);
     }
 
     private void renderScene(Graphics2D g2d) {
@@ -544,11 +545,42 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             }
         }
 
-        Graphics2D overlay = distorted.createGraphics();
+        BufferedImage smeared = addColorSmear(distorted);
+
+        Graphics2D overlay = smeared.createGraphics();
         overlay.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         drawCrtOverlay(overlay);
         overlay.dispose();
-        return distorted;
+        return smeared;
+    }
+
+    private BufferedImage addColorSmear(BufferedImage source) {
+        int width = source.getWidth();
+        int height = source.getHeight();
+        BufferedImage smeared = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2d = smeared.createGraphics();
+        g2d.drawImage(source, 0, 0, null);
+
+        BufferedImage coolShift = tintImage(source, new Color(110, 180, 255, 120));
+        BufferedImage warmShift = tintImage(source, new Color(255, 180, 130, 120));
+
+        g2d.setComposite(java.awt.AlphaComposite.SrcOver.derive(0.35f));
+        g2d.drawImage(coolShift, 2, 0, null);
+        g2d.setComposite(java.awt.AlphaComposite.SrcOver.derive(0.3f));
+        g2d.drawImage(warmShift, -2, 1, null);
+        g2d.dispose();
+        return smeared;
+    }
+
+    private BufferedImage tintImage(BufferedImage source, Color tint) {
+        BufferedImage tinted = new BufferedImage(source.getWidth(), source.getHeight(), BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2d = tinted.createGraphics();
+        g2d.drawImage(source, 0, 0, null);
+        g2d.setComposite(java.awt.AlphaComposite.SrcAtop);
+        g2d.setColor(tint);
+        g2d.fillRect(0, 0, source.getWidth(), source.getHeight());
+        g2d.dispose();
+        return tinted;
     }
 
     private int sampleChannel(BufferedImage img, double sx, double sy, int width, int height, int shift) {
@@ -627,14 +659,52 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.fillRect(0, bandY, BASE_WIDTH, 6);
         g2d.fillRect(0, (bandY + BASE_HEIGHT / 2) % BASE_HEIGHT, BASE_WIDTH, 6);
 
-        int borderAlpha = (int) (70 + 40 * flicker);
-        g2d.setColor(new Color(0, 0, 0, borderAlpha));
-        g2d.drawRect(0, 0, BASE_WIDTH - 1, BASE_HEIGHT - 1);
-        g2d.setColor(new Color(0, 0, 0, (int) (50 * flicker)));
-        g2d.fillRect(0, 0, BASE_WIDTH, 14);
-        g2d.fillRect(0, BASE_HEIGHT - 14, BASE_WIDTH, 14);
-
         g2d.setTransform(oldTransform);
+    }
+
+    private void drawCrtBezel(Graphics2D g2d) {
+        int outerPadding = 12;
+        int frameRadius = 28;
+        Color frameDark = new Color(14, 12, 18, 220);
+        Color frameLite = new Color(40, 42, 54, 220);
+        Color highlight = new Color(86, 92, 120, 200);
+
+        g2d.setColor(frameDark);
+        g2d.fillRoundRect(-outerPadding, -outerPadding, BASE_WIDTH + outerPadding * 2, BASE_HEIGHT + outerPadding * 2, frameRadius, frameRadius);
+        g2d.setColor(frameLite);
+        g2d.fillRoundRect(4 - outerPadding, 4 - outerPadding, BASE_WIDTH + (outerPadding - 4) * 2, BASE_HEIGHT + (outerPadding - 4) * 2, frameRadius - 6, frameRadius - 6);
+
+        int glassPadding = 14;
+        g2d.setColor(new Color(0, 0, 0, 160));
+        g2d.drawRoundRect(glassPadding, glassPadding, BASE_WIDTH - glassPadding * 2, BASE_HEIGHT - glassPadding * 2, 20, 20);
+
+        g2d.setColor(highlight);
+        g2d.drawRoundRect(glassPadding - 4, glassPadding - 4, BASE_WIDTH - (glassPadding - 4) * 2, BASE_HEIGHT - (glassPadding - 4) * 2, 22, 22);
+
+        int controlHeight = 64;
+        int controlY = BASE_HEIGHT - controlHeight + 6;
+        g2d.setColor(new Color(20, 18, 26, 200));
+        g2d.fillRoundRect(10, controlY, BASE_WIDTH - 20, controlHeight, 18, 18);
+        g2d.setColor(new Color(62, 66, 88, 220));
+        g2d.fillRoundRect(16, controlY + 10, BASE_WIDTH - 32, controlHeight - 20, 14, 14);
+
+        g2d.setColor(new Color(130, 140, 170));
+        for (int i = 0; i < 5; i++) {
+            int holeX = 32 + i * 18;
+            for (int y = 0; y < 3; y++) {
+                g2d.fillRect(holeX, controlY + 16 + y * 10, 6, 6);
+            }
+        }
+
+        g2d.setColor(new Color(110, 220, 140));
+        g2d.fillRoundRect(BASE_WIDTH - 140, controlY + 14, 26, 26, 6, 6);
+        g2d.setColor(new Color(200, 80, 80));
+        g2d.fillRoundRect(BASE_WIDTH - 100, controlY + 14, 26, 26, 6, 6);
+        g2d.setColor(new Color(240, 200, 120));
+        g2d.fillRoundRect(BASE_WIDTH - 60, controlY + 14, 26, 26, 6, 6);
+
+        g2d.setColor(new Color(220, 235, 250));
+        g2d.drawString("CRT MODE", 32, controlY + controlHeight - 14);
     }
 
     private void drawTitle(Graphics2D g2d, String text) {
@@ -761,10 +831,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
     private void drawWorld(Graphics2D g2d) {
         for (Platform platform : platforms) {
-            drawPlatformBlock(g2d, platform, new Color(54, 102, 144), new Color(98, 190, 255));
+            drawPlatformBlock(g2d, platform, new Color(46, 88, 116), new Color(122, 178, 212));
         }
         for (MovingPlatform mover : movers) {
-            drawPlatformBlock(g2d, mover, new Color(74, 126, 180), new Color(180, 240, 255));
+            drawPlatformBlock(g2d, mover, new Color(64, 104, 148), new Color(180, 220, 250));
         }
         exitGate.draw(g2d);
         for (Checkpoint checkpoint : checkpoints) {
@@ -798,24 +868,26 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         int w = platform.getWidth();
         int h = platform.getHeight();
 
-        Color shadow = new Color(0, 0, 0, 80);
-        g2d.setColor(shadow);
-        g2d.fillRoundRect(x + 4, y + 4, w, h, 10, 10);
+        g2d.setColor(new Color(12, 16, 24, 150));
+        g2d.fillRect(x + 3, y + 3, w, h);
 
-        GradientPaint paint = new GradientPaint(x, y, highlight, x, y + h, base);
-        g2d.setPaint(paint);
-        g2d.fillRoundRect(x, y, w, h, 10, 10);
+        g2d.setColor(base);
+        g2d.fillRect(x, y, w, h);
+        g2d.setColor(highlight);
+        g2d.fillRect(x, y, w, 6);
+        g2d.fillRect(x, y + h - 8, w, 6);
 
-        g2d.setColor(new Color(255, 255, 255, 40));
-        g2d.fillRoundRect(x + 3, y + 3, w - 6, Math.max(6, h / 4), 8, 8);
+        g2d.setColor(new Color(255, 255, 255, 24));
+        for (int px = x + 2; px < x + w - 2; px += 6) {
+            for (int py = y + 2; py < y + h - 2; py += 6) {
+                if (((px + py) / 6) % 2 == 0) {
+                    g2d.fillRect(px, py, 3, 3);
+                }
+            }
+        }
 
-        java.awt.Stroke old = g2d.getStroke();
-        g2d.setStroke(new BasicStroke(2f));
-        g2d.setColor(new Color(14, 22, 32, 180));
-        g2d.drawRoundRect(x, y, w, h, 10, 10);
-        g2d.setStroke(old);
-        g2d.setColor(new Color(255, 255, 255, 30));
-        g2d.drawRoundRect(x + 1, y + 1, w - 2, h - 2, 10, 10);
+        g2d.setColor(new Color(20, 26, 34));
+        g2d.drawRect(x, y, w, h);
     }
 
     private void drawHud(Graphics2D g2d) {

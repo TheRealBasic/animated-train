@@ -20,10 +20,18 @@ public class CoopButton {
     }
 
     public void draw(Graphics2D g2d) {
-        g2d.setColor(pressed ? new Color(120, 255, 160) : new Color(100, 160, 255));
-        g2d.fillRoundRect((int) bounds.x, (int) bounds.y, (int) bounds.width, (int) bounds.height, 8, 8);
-        g2d.setColor(new Color(10, 20, 30));
-        g2d.drawRoundRect((int) bounds.x, (int) bounds.y, (int) bounds.width, (int) bounds.height, 8, 8);
+        int x = (int) bounds.x;
+        int y = (int) bounds.y;
+        int w = (int) bounds.width;
+        int h = (int) bounds.height;
+
+        g2d.setColor(new Color(16, 16, 24, 160));
+        g2d.fillRect(x + 2, y + 2, w, h);
+
+        g2d.setColor(pressed ? new Color(120, 230, 160) : new Color(110, 170, 240));
+        g2d.fillRect(x, y, w, h);
+        g2d.setColor(new Color(20, 30, 40));
+        g2d.drawRect(x, y, w, h);
     }
 
     public Rectangle2D.Double getBounds() {

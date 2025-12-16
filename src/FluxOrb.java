@@ -17,15 +17,27 @@ public class FluxOrb {
             return;
         }
         int diameter = radius * 2;
-        g2d.setColor(new Color(120, 226, 255, 100));
-        g2d.fillOval((int) (position.x - radius * 1.6), (int) (position.y - radius * 1.6), (int) (diameter * 1.6), (int) (diameter * 1.6));
+        int x = (int) (position.x - radius);
+        int y = (int) (position.y - radius);
 
-        g2d.setColor(new Color(180, 246, 255));
-        g2d.fillOval((int) (position.x - radius), (int) (position.y - radius), diameter, diameter);
-        g2d.setColor(new Color(0, 140, 200));
-        g2d.drawOval((int) (position.x - radius), (int) (position.y - radius), diameter, diameter);
-        g2d.setColor(new Color(255, 255, 255, 120));
-        g2d.fillOval((int) (position.x - radius / 1.8), (int) (position.y - radius / 1.8), (int) (diameter / 1.8), (int) (diameter / 1.8));
+        g2d.setColor(new Color(12, 22, 30, 140));
+        g2d.fillRect(x + 2, y + 2, diameter, diameter);
+
+        g2d.setColor(new Color(90, 220, 255));
+        g2d.fillRect(x, y, diameter, diameter);
+        g2d.setColor(new Color(0, 80, 140));
+        g2d.drawRect(x, y, diameter, diameter);
+
+        g2d.setColor(new Color(255, 255, 255, 180));
+        g2d.fillRect(x + radius - 2, y - 4, 4, 6);
+        g2d.fillRect(x + radius - 2, y + diameter - 2, 4, 6);
+        g2d.fillRect(x - 4, y + radius - 2, 6, 4);
+        g2d.fillRect(x + diameter - 2, y + radius - 2, 6, 4);
+
+        g2d.setColor(new Color(0, 150, 220, 140));
+        for (int i = 0; i < diameter; i += 4) {
+            g2d.fillRect(x + i, y + i / 2 % diameter, 2, 2);
+        }
     }
 
     public boolean checkCollected(Player player) {
