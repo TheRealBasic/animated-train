@@ -18,6 +18,7 @@ import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.awt.geom.Point2D;
 import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferInt;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -554,6 +555,8 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         int height = source.getHeight();
         ensureBuffers(width, height);
         BufferedImage distorted = distortionBuffer;
+        int[] src = ((DataBufferInt) source.getRaster().getDataBuffer()).getData();
+        int[] dst = ((DataBufferInt) distorted.getRaster().getDataBuffer()).getData();
 
         double cx = width / 2.0;
         double cy = height / 2.0;
@@ -578,15 +581,15 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
                 int baseX = clampToInt(Math.round(sampleX), 0, width - 1);
                 int baseY = clampToInt(Math.round(sampleY), 0, height - 1);
-                int baseRgb = source.getRGB(baseX, baseY);
+                int baseRgb = src[baseY * width + baseX];
                 int alpha = (baseRgb >>> 24) & 0xFF;
 
-                int rSample = sampleChannel(source, sampleX + aberration, sampleY - aberration, width, height, 16);
-                int gSample = sampleChannel(source, sampleX, sampleY, width, height, 8);
-                int bSample = sampleChannel(source, sampleX - aberration, sampleY + aberration, width, height, 0);
+                int rSample = sampleChannel(src, sampleX + aberration, sampleY - aberration, width, height, 16);
+                int gSample = sampleChannel(src, sampleX, sampleY, width, height, 8);
+                int bSample = sampleChannel(src, sampleX - aberration, sampleY + aberration, width, height, 0);
 
                 int rgb = (alpha << 24) | (rSample << 16) | (gSample << 8) | bSample;
-                distorted.setRGB(x, y, rgb);
+                dst[y * width + x] = rgb;
             }
         }
 
@@ -627,10 +630,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         return target;
     }
 
-    private int sampleChannel(BufferedImage img, double sx, double sy, int width, int height, int shift) {
+    private int sampleChannel(int[] src, double sx, double sy, int width, int height, int shift) {
         int x = clampToInt(Math.round(sx), 0, width - 1);
         int y = clampToInt(Math.round(sy), 0, height - 1);
-        return (img.getRGB(x, y) >> shift) & 0xFF;
+        return (src[y * width + x] >> shift) & 0xFF;
     }
 
     private int clampToInt(long value, int min, int max) {
