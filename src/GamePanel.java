@@ -18,6 +18,7 @@ import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.awt.geom.Point2D;
 import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferInt;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -472,7 +473,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         renderScene(sceneG);
         sceneG.dispose();
 
-        BufferedImage processed = applyScreenEffects(sceneBuffer);
+        BufferedImage processed = settings.isReducedEffects() ? sceneBuffer : applyScreenEffects(sceneBuffer);
 
         Graphics2D g2d = (Graphics2D) g;
         g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
@@ -483,7 +484,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.translate(offsetX, offsetY);
         g2d.scale(renderScale, renderScale);
         g2d.drawImage(processed, 0, 0, null);
-        drawCrtBezel(g2d);
+        if (!settings.isReducedEffects()) {
+            drawCrtBezel(g2d);
+        }
         g2d.setTransform(oldTransform);
     }
 
@@ -545,10 +548,15 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private BufferedImage applyScreenEffects(BufferedImage source) {
+        if (settings.isReducedEffects()) {
+            return source;
+        }
         int width = source.getWidth();
         int height = source.getHeight();
         ensureBuffers(width, height);
         BufferedImage distorted = distortionBuffer;
+        int[] src = ((DataBufferInt) source.getRaster().getDataBuffer()).getData();
+        int[] dst = ((DataBufferInt) distorted.getRaster().getDataBuffer()).getData();
 
         double cx = width / 2.0;
         double cy = height / 2.0;
@@ -573,15 +581,15 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
                 int baseX = clampToInt(Math.round(sampleX), 0, width - 1);
                 int baseY = clampToInt(Math.round(sampleY), 0, height - 1);
-                int baseRgb = source.getRGB(baseX, baseY);
+                int baseRgb = src[baseY * width + baseX];
                 int alpha = (baseRgb >>> 24) & 0xFF;
 
-                int rSample = sampleChannel(source, sampleX + aberration, sampleY - aberration, width, height, 16);
-                int gSample = sampleChannel(source, sampleX, sampleY, width, height, 8);
-                int bSample = sampleChannel(source, sampleX - aberration, sampleY + aberration, width, height, 0);
+                int rSample = sampleChannel(src, sampleX + aberration, sampleY - aberration, width, height, 16);
+                int gSample = sampleChannel(src, sampleX, sampleY, width, height, 8);
+                int bSample = sampleChannel(src, sampleX - aberration, sampleY + aberration, width, height, 0);
 
                 int rgb = (alpha << 24) | (rSample << 16) | (gSample << 8) | bSample;
-                distorted.setRGB(x, y, rgb);
+                dst[y * width + x] = rgb;
             }
         }
 
@@ -622,10 +630,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         return target;
     }
 
-    private int sampleChannel(BufferedImage img, double sx, double sy, int width, int height, int shift) {
+    private int sampleChannel(int[] src, double sx, double sy, int width, int height, int shift) {
         int x = clampToInt(Math.round(sx), 0, width - 1);
         int y = clampToInt(Math.round(sy), 0, height - 1);
-        return (img.getRGB(x, y) >> shift) & 0xFF;
+        return (src[y * width + x] >> shift) & 0xFF;
     }
 
     private int clampToInt(long value, int min, int max) {
@@ -833,6 +841,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         lines.add("Master Volume: " + settings.getMasterVolume());
         lines.add("Screen Scale: " + String.format("%.1fx", settings.getScreenScale()));
         lines.add("Show Debug HUD: " + (settings.isShowDebugHud() ? "On" : "Off"));
+        lines.add("Reduced Effects: " + (settings.isReducedEffects() ? "On" : "Off"));
         lines.add("Rebind Left: " + KeyEvent.getKeyText(settings.getKeyLeft()));
         lines.add("Rebind Right: " + KeyEvent.getKeyText(settings.getKeyRight()));
         lines.add("Rebind Jump: " + KeyEvent.getKeyText(settings.getKeyJump()));
@@ -1098,7 +1107,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             return;
         }
         if (gameState == GameState.SETTINGS) {
-            handleMenuNavigation(e, 7, this::handleSettingsSelect);
+            handleMenuNavigation(e, 8, this::handleSettingsSelect);
             if (e.getKeyCode() == KeyEvent.VK_LEFT) {
                 adjustSetting(-1);
             } else if (e.getKeyCode() == KeyEvent.VK_RIGHT) {
@@ -1387,18 +1396,22 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 settings.save();
                 break;
             case 3:
-                waitingForBinding = true;
-                bindingTarget = "Left";
+                settings.setReducedEffects(!settings.isReducedEffects());
+                settings.save();
                 break;
             case 4:
                 waitingForBinding = true;
-                bindingTarget = "Right";
+                bindingTarget = "Left";
                 break;
             case 5:
                 waitingForBinding = true;
-                bindingTarget = "Jump";
+                bindingTarget = "Right";
                 break;
             case 6:
+                waitingForBinding = true;
+                bindingTarget = "Jump";
+                break;
+            case 7:
                 settings.save();
                 gameState = previousStateBeforeSettings;
                 break;
@@ -1419,7 +1432,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private void handleSettingsSelect() {
-        if (settingsMenuIndex == 6) {
+        if (settingsMenuIndex == 7) {
             gameState = previousStateBeforeSettings;
         } else {
             adjustSetting(0);
