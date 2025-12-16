@@ -408,8 +408,15 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             saveData.currentLevelIndex = lastCompletedIndex + 1;
         }
         SaveGame.save(saveData);
-        gameState = GameState.LEVEL_COMPLETE;
-        levelCompleteIndex = 0;
+        boolean hasNextLevel = lastCompletedIndex + 1 < levelManager.getLevelCount();
+        if (multiplayerActive && hasNextLevel && session != null) {
+            session.sendLevelIndex(saveData.currentLevelIndex);
+            loadLevel(saveData.currentLevelIndex);
+            gameState = GameState.IN_GAME;
+        } else {
+            gameState = GameState.LEVEL_COMPLETE;
+            levelCompleteIndex = 0;
+        }
     }
 
     private void nextLevel() {
