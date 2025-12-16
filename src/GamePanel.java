@@ -165,6 +165,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         double dt = (now - lastTickNanos) / 1_000_000_000.0;
         dt = Math.min(dt, 0.05);
         lastTickNanos = now;
+        if (multiplayerActive && gameState == GameState.MULTIPLAYER_WAIT) {
+            pollWaitingLevelSync();
+        }
+
         if (gameState == GameState.IN_GAME) {
             updateGravityCooldown(dt);
             handleInput();
@@ -191,6 +195,20 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
 
         repaint();
+    }
+
+    private void pollWaitingLevelSync() {
+        if (session == null) {
+            return;
+        }
+        MultiplayerSession.RemoteState remote = session.pollRemoteState();
+        if (remote.levelIndex() != null) {
+            saveData.currentLevelIndex = remote.levelIndex();
+            SaveGame.save(saveData);
+            loadLevel(remote.levelIndex());
+            waitingForLevelSync = false;
+            gameState = GameState.IN_GAME;
+        }
     }
 
     private void handleInput() {
@@ -414,7 +432,6 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         drawBackground(g2d);
         switch (gameState) {
             case MAIN_MENU:
-                drawTitle(g2d, "Gravity Warp Trials");
                 drawMainMenu(g2d);
                 break;
             case MULTIPLAYER_MENU:
@@ -450,40 +467,69 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 drawCredits(g2d);
                 break;
         }
+
+        drawCrtOverlay(g2d);
     }
 
     private void drawBackground(Graphics2D g2d) {
-        GradientPaint sky = new GradientPaint(0, 0, new Color(10, 16, 28), 0, BASE_HEIGHT, new Color(4, 9, 15));
-        g2d.setPaint(sky);
+        GradientPaint dusk = new GradientPaint(0, 0, new Color(6, 8, 12), 0, BASE_HEIGHT, new Color(3, 4, 8));
+        g2d.setPaint(dusk);
         g2d.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
 
-        g2d.setColor(new Color(60, 140, 200, 60));
-        for (int y = -100; y < BASE_HEIGHT + 100; y += 80) {
-            g2d.fillRect(-40, y, BASE_WIDTH + 80, 32);
+        g2d.setColor(new Color(48, 60, 72, 55));
+        for (int y = -40; y < BASE_HEIGHT + 80; y += 36) {
+            g2d.fillRect(-20, y, BASE_WIDTH + 40, 8);
         }
 
-        g2d.setColor(new Color(255, 255, 255, 20));
-        for (int i = 0; i < BASE_WIDTH; i += 90) {
-            int offset = (i / 90) % 2 == 0 ? 20 : -20;
-            g2d.drawLine(i + offset, 0, i - offset, BASE_HEIGHT);
+        g2d.setColor(new Color(90, 104, 132, 38));
+        for (int i = 0; i < BASE_WIDTH; i += 120) {
+            g2d.drawLine(i, 0, i + 60, BASE_HEIGHT);
         }
 
-        g2d.setColor(new Color(80, 120, 200, 28));
-        for (int i = 0; i < 14; i++) {
-            int size = 160 + i * 12;
-            g2d.drawOval(BASE_WIDTH - size, 40 - (i * 6), size, size);
+        g2d.setColor(new Color(12, 180, 200, 18));
+        for (int i = 0; i < 10; i++) {
+            int size = 220 + i * 24;
+            g2d.drawOval(BASE_WIDTH - size, 40 - (i * 10), size, size);
         }
+    }
+
+    private void drawCrtOverlay(Graphics2D g2d) {
+        g2d.setColor(new Color(255, 255, 255, 10));
+        for (int y = 0; y < BASE_HEIGHT; y += 3) {
+            g2d.drawLine(0, y, BASE_WIDTH, y);
+        }
+
+        g2d.setColor(new Color(0, 0, 0, 120));
+        g2d.drawRect(0, 0, BASE_WIDTH - 1, BASE_HEIGHT - 1);
+        g2d.setColor(new Color(0, 0, 0, 80));
+        g2d.fillRect(0, 0, BASE_WIDTH, 18);
+        g2d.fillRect(0, BASE_HEIGHT - 18, BASE_WIDTH, 18);
     }
 
     private void drawTitle(Graphics2D g2d, String text) {
-        g2d.setColor(new Color(230, 235, 243));
-        g2d.setFont(new Font("Consolas", Font.BOLD, 32));
+        g2d.setColor(new Color(232, 235, 222));
+        g2d.setFont(new Font("Consolas", Font.BOLD, 30));
         int width = g2d.getFontMetrics().stringWidth(text);
-        g2d.drawString(text, (BASE_WIDTH - width) / 2, 120);
+        g2d.drawString(text, (BASE_WIDTH - width) / 2, 110);
+        g2d.setColor(new Color(240, 206, 80, 160));
+        g2d.drawLine((BASE_WIDTH - width) / 2, 118, (BASE_WIDTH + width) / 2, 118);
     }
 
     private void drawMainMenu(Graphics2D g2d) {
-        g2d.setFont(new Font("Consolas", Font.PLAIN, 20));
+        Color accent = new Color(240, 206, 80);
+        Color text = new Color(225, 225, 214);
+        g2d.setFont(new Font("Consolas", Font.BOLD, 34));
+        String top = "GRAVITY WARP";
+        String bottom = "TRIALS";
+        int topWidth = g2d.getFontMetrics().stringWidth(top);
+        int bottomWidth = g2d.getFontMetrics().stringWidth(bottom);
+        g2d.setColor(text);
+        g2d.drawString(top, (BASE_WIDTH - topWidth) / 2, 120);
+        g2d.drawString(bottom, (BASE_WIDTH - bottomWidth) / 2, 156);
+        g2d.setColor(new Color(240, 206, 80, 160));
+        g2d.drawLine((BASE_WIDTH - bottomWidth) / 2, 164, (BASE_WIDTH + bottomWidth) / 2, 164);
+
+        g2d.setFont(new Font("Consolas", Font.PLAIN, 21));
         String[] options = new String[]{
                 "Continue",
                 "New Game",
@@ -493,18 +539,20 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 "Credits",
                 "Quit"
         };
-        int startY = 200;
+        int startY = 210;
         for (int i = 0; i < options.length; i++) {
             boolean disabled = options[i].equals("Continue") && !SaveGame.exists();
-            g2d.setColor(mainMenuIndex == i ? new Color(190, 255, 180) : new Color(230, 235, 243));
-            if (disabled) {
-                g2d.setColor(new Color(140, 150, 160));
-            }
-            String text = options[i];
-            int width = g2d.getFontMetrics().stringWidth(text);
-            g2d.drawString(text, (BASE_WIDTH - width) / 2, startY + i * 36);
+            boolean selected = mainMenuIndex == i;
+            g2d.setColor(disabled ? new Color(110, 110, 110) : (selected ? accent : text));
+            String prefix = selected ? "> " : "  ";
+            String suffix = selected ? " <" : "";
+            String label = prefix + options[i] + suffix;
+            int width = g2d.getFontMetrics().stringWidth(label);
+            g2d.drawString(label, (BASE_WIDTH - width) / 2, startY + i * 34);
         }
-        drawControlHint(g2d, "Use W/S or Up/Down to navigate, Enter to select");
+
+        g2d.setFont(new Font("Consolas", Font.PLAIN, 14));
+        drawControlHint(g2d, "[Arrows/Enter to Navigate]");
     }
 
     private void drawMultiplayerMenu(Graphics2D g2d) {
@@ -747,7 +795,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private void drawControlHint(Graphics2D g2d, String hint) {
-        g2d.setColor(new Color(140, 180, 200));
+        g2d.setColor(new Color(190, 180, 150));
         int width = g2d.getFontMetrics().stringWidth(hint);
         g2d.drawString(hint, (BASE_WIDTH - width) / 2, BASE_HEIGHT - 40);
     }
