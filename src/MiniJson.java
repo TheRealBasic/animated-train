@@ -109,7 +109,7 @@ public class MiniJson {
         int start = index;
         while (index < text.length()) {
             char c = text.charAt(index);
-            if (Character.isDigit(c) || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E') {
+            if (Character.isDigit(c) || Character.isLetter(c) || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E') {
                 index++;
             } else {
                 break;
