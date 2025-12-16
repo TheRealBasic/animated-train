@@ -4,6 +4,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -26,10 +27,10 @@ public class LevelManager {
                 try {
                     String text = Files.readString(path);
                     Object rootObj = new MiniJson(text).parse();
-                    if (!(rootObj instanceof Map)) {
+                    if (!(rootObj instanceof Map<?, ?> rootMap)) {
                         continue;
                     }
-                    LevelData data = parseLevel((Map<String, Object>) rootObj);
+                    LevelData data = parseLevel(asStringObjectMap(rootMap));
                     if (data != null) {
                         result.add(data);
                     }
@@ -44,8 +45,11 @@ public class LevelManager {
     }
 
     private LevelData parseLevel(Map<String, Object> json) {
+        if (json == null) {
+            return null;
+        }
         String name = (String) json.getOrDefault("name", "Untitled");
-        Map<String, Object> spawn = (Map<String, Object>) json.get("spawn");
+        Map<String, Object> spawn = asStringObjectMap(json.get("spawn"));
         if (spawn == null) {
             return null;
         }
@@ -53,7 +57,7 @@ public class LevelManager {
         double spawnY = toDouble(spawn.get("y"));
         GravityDir spawnGravity = GravityDir.valueOf(((String) spawn.getOrDefault("gravity", "DOWN")).toUpperCase());
 
-        Map<String, Object> gate = (Map<String, Object>) json.get("exitGate");
+        Map<String, Object> gate = asStringObjectMap(json.get("exitGate"));
         if (gate == null) {
             return null;
         }
@@ -64,33 +68,31 @@ public class LevelManager {
 
         double par = toDouble(json.getOrDefault("par", 60));
 
-        List<Platform> platforms = parsePlatforms((List<Object>) json.get("platforms"));
-        List<MovingPlatform> movers = parseMovers((List<Object>) json.get("movingPlatforms"));
-        List<Spike> spikes = parseSpikes((List<Object>) json.get("spikes"));
-        List<Checkpoint> checkpoints = parseCheckpoints((List<Object>) json.get("checkpoints"));
-        List<Point2D.Double> orbs = parsePoints((List<Object>) json.get("orbs"));
+        List<Platform> platforms = parsePlatforms(asMapList(json.get("platforms")));
+        List<MovingPlatform> movers = parseMovers(asMapList(json.get("movingPlatforms")));
+        List<Spike> spikes = parseSpikes(asMapList(json.get("spikes")));
+        List<Checkpoint> checkpoints = parseCheckpoints(asMapList(json.get("checkpoints")));
+        List<Point2D.Double> orbs = parsePoints(asMapList(json.get("orbs")));
 
         return new LevelData(name, platforms, orbs, movers, spikes, checkpoints,
                 gateX, gateY, gateW, gateH,
                 new Point2D.Double(spawnX, spawnY), spawnGravity, par);
     }
 
-    private List<Platform> parsePlatforms(List<Object> list) {
+    private List<Platform> parsePlatforms(List<Map<String, Object>> list) {
         List<Platform> platforms = new ArrayList<>();
         if (list == null) return platforms;
-        for (Object obj : list) {
-            Map<String, Object> map = (Map<String, Object>) obj;
+        for (Map<String, Object> map : list) {
             platforms.add(new Platform(toDouble(map.get("x")), toDouble(map.get("y")),
                     (int) toDouble(map.get("w")), (int) toDouble(map.get("h"))));
         }
         return platforms;
     }
 
-    private List<MovingPlatform> parseMovers(List<Object> list) {
+    private List<MovingPlatform> parseMovers(List<Map<String, Object>> list) {
         List<MovingPlatform> movers = new ArrayList<>();
         if (list == null) return movers;
-        for (Object obj : list) {
-            Map<String, Object> map = (Map<String, Object>) obj;
+        for (Map<String, Object> map : list) {
             double x = toDouble(map.get("x"));
             double y = toDouble(map.get("y"));
             int w = (int) toDouble(map.get("w"));
@@ -103,32 +105,29 @@ public class LevelManager {
         return movers;
     }
 
-    private List<Spike> parseSpikes(List<Object> list) {
+    private List<Spike> parseSpikes(List<Map<String, Object>> list) {
         List<Spike> spikes = new ArrayList<>();
         if (list == null) return spikes;
-        for (Object obj : list) {
-            Map<String, Object> map = (Map<String, Object>) obj;
+        for (Map<String, Object> map : list) {
             spikes.add(new Spike(toDouble(map.get("x")), toDouble(map.get("y")),
                     (int) toDouble(map.get("w")), (int) toDouble(map.get("h"))));
         }
         return spikes;
     }
 
-    private List<Checkpoint> parseCheckpoints(List<Object> list) {
+    private List<Checkpoint> parseCheckpoints(List<Map<String, Object>> list) {
         List<Checkpoint> checkpoints = new ArrayList<>();
         if (list == null) return checkpoints;
-        for (Object obj : list) {
-            Map<String, Object> map = (Map<String, Object>) obj;
+        for (Map<String, Object> map : list) {
             checkpoints.add(new Checkpoint(new Point2D.Double(toDouble(map.get("x")), toDouble(map.get("y"))), 16));
         }
         return checkpoints;
     }
 
-    private List<Point2D.Double> parsePoints(List<Object> list) {
+    private List<Point2D.Double> parsePoints(List<Map<String, Object>> list) {
         List<Point2D.Double> points = new ArrayList<>();
         if (list == null) return points;
-        for (Object obj : list) {
-            Map<String, Object> map = (Map<String, Object>) obj;
+        for (Map<String, Object> map : list) {
             points.add(new Point2D.Double(toDouble(map.get("x")), toDouble(map.get("y"))));
         }
         return points;
@@ -139,6 +138,34 @@ public class LevelManager {
             return ((Number) value).doubleValue();
         }
         return Double.parseDouble(String.valueOf(value));
+    }
+
+    private Map<String, Object> asStringObjectMap(Object value) {
+        if (!(value instanceof Map<?, ?> rawMap)) {
+            return null;
+        }
+        Map<String, Object> result = new HashMap<>();
+        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+            Object key = entry.getKey();
+            if (key instanceof String) {
+                result.put((String) key, entry.getValue());
+            }
+        }
+        return result;
+    }
+
+    private List<Map<String, Object>> asMapList(Object value) {
+        if (!(value instanceof List<?> rawList)) {
+            return null;
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Object obj : rawList) {
+            Map<String, Object> map = asStringObjectMap(obj);
+            if (map != null) {
+                result.add(map);
+            }
+        }
+        return result;
     }
 
     public LevelData getLevel(int index) {
