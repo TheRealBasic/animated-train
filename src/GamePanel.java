@@ -1,6 +1,7 @@
 import javax.swing.JPanel;
 import javax.swing.Timer;
 import javax.swing.SwingUtilities;
+import java.awt.AlphaComposite;
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Dimension;
@@ -88,6 +89,13 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private double deathEffectTimer;
     private double screenShakeTimer;
     private double screenShakeStrength;
+    private BufferedImage sceneBuffer;
+    private BufferedImage distortionBuffer;
+    private BufferedImage smearBuffer;
+    private BufferedImage tintBufferCool;
+    private BufferedImage tintBufferWarm;
+    private final List<Platform> platformScratch = new ArrayList<>();
+    private final List<Platform> doorPlatforms = new ArrayList<>();
 
     private enum GameState {
         MAIN_MENU,
@@ -140,6 +148,11 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         orbs = new ArrayList<>();
         buttons = data.getButtons();
         doors = data.getDoors();
+        doorPlatforms.clear();
+        for (CoopDoor door : doors) {
+            var bounds = door.getBounds();
+            doorPlatforms.add(new Platform(bounds.x, bounds.y, (int) bounds.width, (int) bounds.height));
+        }
         for (Point2D.Double pos : data.getOrbPositions()) {
             orbs.add(new FluxOrb(pos, 12));
         }
@@ -356,14 +369,16 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private List<Platform> getAllPlatforms() {
-        List<Platform> all = new ArrayList<>(platforms);
-        all.addAll(movers);
-        for (CoopDoor door : doors) {
-            if (!door.isOpen()) {
-                all.add(new Platform(door.getBounds().x, door.getBounds().y, (int) door.getBounds().width, (int) door.getBounds().height));
+        platformScratch.clear();
+        platformScratch.addAll(platforms);
+        platformScratch.addAll(movers);
+        for (int i = 0; i < doors.size(); i++) {
+            CoopDoor door = doors.get(i);
+            if (!door.isOpen() && i < doorPlatforms.size()) {
+                platformScratch.add(doorPlatforms.get(i));
             }
         }
-        return all;
+        return platformScratch;
     }
 
     private void updateGravityCooldown(double dt) {
@@ -450,13 +465,14 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
-        BufferedImage scene = new BufferedImage(BASE_WIDTH, BASE_HEIGHT, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D sceneG = scene.createGraphics();
+        ensureBuffers(BASE_WIDTH, BASE_HEIGHT);
+        Graphics2D sceneG = sceneBuffer.createGraphics();
+        clearImage(sceneBuffer, sceneG);
         sceneG.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
         renderScene(sceneG);
         sceneG.dispose();
 
-        BufferedImage processed = applyScreenEffects(scene);
+        BufferedImage processed = applyScreenEffects(sceneBuffer);
 
         Graphics2D g2d = (Graphics2D) g;
         g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
@@ -469,6 +485,22 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.drawImage(processed, 0, 0, null);
         drawCrtBezel(g2d);
         g2d.setTransform(oldTransform);
+    }
+
+    private void ensureBuffers(int width, int height) {
+        if (sceneBuffer == null || sceneBuffer.getWidth() != width || sceneBuffer.getHeight() != height) {
+            sceneBuffer = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+            distortionBuffer = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+            smearBuffer = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+            tintBufferCool = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+            tintBufferWarm = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        }
+    }
+
+    private void clearImage(BufferedImage image, Graphics2D g2d) {
+        g2d.setComposite(AlphaComposite.Clear);
+        g2d.fillRect(0, 0, image.getWidth(), image.getHeight());
+        g2d.setComposite(AlphaComposite.SrcOver);
     }
 
     private void renderScene(Graphics2D g2d) {
@@ -515,7 +547,8 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private BufferedImage applyScreenEffects(BufferedImage source) {
         int width = source.getWidth();
         int height = source.getHeight();
-        BufferedImage distorted = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        ensureBuffers(width, height);
+        BufferedImage distorted = distortionBuffer;
 
         double cx = width / 2.0;
         double cy = height / 2.0;
@@ -562,14 +595,13 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private BufferedImage addColorSmear(BufferedImage source) {
-        int width = source.getWidth();
-        int height = source.getHeight();
-        BufferedImage smeared = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        BufferedImage smeared = smearBuffer;
         Graphics2D g2d = smeared.createGraphics();
+        clearImage(smeared, g2d);
         g2d.drawImage(source, 0, 0, null);
 
-        BufferedImage coolShift = tintImage(source, new Color(110, 180, 255, 120));
-        BufferedImage warmShift = tintImage(source, new Color(255, 180, 130, 120));
+        BufferedImage coolShift = tintImage(source, new Color(110, 180, 255, 120), tintBufferCool);
+        BufferedImage warmShift = tintImage(source, new Color(255, 180, 130, 120), tintBufferWarm);
 
         g2d.setComposite(java.awt.AlphaComposite.SrcOver.derive(0.35f));
         g2d.drawImage(coolShift, 2, 0, null);
@@ -579,15 +611,15 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         return smeared;
     }
 
-    private BufferedImage tintImage(BufferedImage source, Color tint) {
-        BufferedImage tinted = new BufferedImage(source.getWidth(), source.getHeight(), BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g2d = tinted.createGraphics();
+    private BufferedImage tintImage(BufferedImage source, Color tint, BufferedImage target) {
+        Graphics2D g2d = target.createGraphics();
+        clearImage(target, g2d);
         g2d.drawImage(source, 0, 0, null);
         g2d.setComposite(java.awt.AlphaComposite.SrcAtop);
         g2d.setColor(tint);
         g2d.fillRect(0, 0, source.getWidth(), source.getHeight());
         g2d.dispose();
-        return tinted;
+        return target;
     }
 
     private int sampleChannel(BufferedImage img, double sx, double sy, int width, int height, int shift) {
