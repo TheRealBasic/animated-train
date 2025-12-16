@@ -161,7 +161,7 @@ public class Player {
     }
 
     public void draw(Graphics2D g2d, GravityDir gravityDir) {
-        draw(g2d, gravityDir, new Color(104, 156, 192), new Color(72, 112, 148));
+        draw(g2d, gravityDir, new Color(156, 102, 212), new Color(86, 46, 124));
     }
 
     public void draw(Graphics2D g2d, GravityDir gravityDir, Color top, Color bottom) {
@@ -185,7 +185,7 @@ public class Player {
                 break;
         }
         g2d.rotate(angle, centerX, centerY);
-        g2d.setColor(new Color(6, 8, 10, 160));
+        g2d.setColor(new Color(8, 6, 16, 170));
         g2d.fillRect((int) x + 2, (int) y + 2, width, height);
 
         g2d.setColor(top);
@@ -193,17 +193,17 @@ public class Player {
         g2d.setColor(bottom);
         g2d.fillRect((int) x, (int) y + height / 2, width, height / 2);
 
-        g2d.setColor(new Color(16, 22, 30));
+        g2d.setColor(new Color(18, 10, 26));
         g2d.fillRect((int) x + 4, (int) y + height / 3, width - 8, height / 3);
-        g2d.setColor(new Color(152, 204, 230));
+        g2d.setColor(new Color(198, 150, 72));
         g2d.fillRect((int) x + 6, (int) y + height / 3 + 2, width - 12, height / 4);
 
-        g2d.setColor(new Color(196, 214, 226, 150));
+        g2d.setColor(new Color(186, 170, 204, 140));
         for (int px = (int) x + 2; px < x + width - 2; px += 4) {
             g2d.fillRect(px, (int) y + 3, 2, 2);
         }
 
-        g2d.setColor(new Color(18, 20, 22));
+        g2d.setColor(new Color(22, 12, 34));
         g2d.drawRect((int) x, (int) y, width, height);
 
         g2d.setStroke(oldStroke);

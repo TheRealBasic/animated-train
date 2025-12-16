@@ -18,23 +18,23 @@ public class ExitGate {
     public void draw(Graphics2D g2d) {
         int ix = (int) x;
         int iy = (int) y;
-        g2d.setColor(new Color(6, 10, 18, 150));
+        g2d.setColor(new Color(8, 6, 16, 170));
         g2d.fillRect(ix + 2, iy + 2, width, height);
 
         if (!unlocked) {
-            g2d.setColor(new Color(42, 74, 110));
+            g2d.setColor(new Color(52, 32, 64));
             g2d.fillRect(ix, iy, width, height);
-            g2d.setColor(new Color(18, 28, 46));
+            g2d.setColor(new Color(22, 12, 34));
             g2d.drawRect(ix, iy, width, height);
         } else {
-            g2d.setColor(new Color(38, 94, 90, 90));
+            g2d.setColor(new Color(62, 24, 80, 110));
             g2d.fillRect(ix - 4, iy - 4, width + 8, height + 8);
-            g2d.setColor(new Color(86, 172, 158));
+            g2d.setColor(new Color(104, 214, 178));
             g2d.fillRect(ix, iy, width, height);
-            g2d.setColor(new Color(30, 86, 80));
+            g2d.setColor(new Color(62, 24, 80));
             g2d.drawRect(ix, iy, width, height);
 
-            g2d.setColor(new Color(214, 236, 230, 190));
+            g2d.setColor(new Color(198, 150, 72, 200));
             for (int px = ix + 4; px < ix + width; px += 6) {
                 g2d.fillRect(px, iy + 4, 3, 3);
                 g2d.fillRect(px, iy + height - 8, 3, 3);

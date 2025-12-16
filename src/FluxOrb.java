@@ -20,21 +20,21 @@ public class FluxOrb {
         int x = (int) (position.x - radius);
         int y = (int) (position.y - radius);
 
-        g2d.setColor(new Color(6, 12, 18, 150));
+        g2d.setColor(new Color(8, 6, 16, 170));
         g2d.fillRect(x + 2, y + 2, diameter, diameter);
 
-        g2d.setColor(new Color(68, 164, 190));
+        g2d.setColor(new Color(104, 214, 178));
         g2d.fillRect(x, y, diameter, diameter);
-        g2d.setColor(new Color(18, 86, 106));
+        g2d.setColor(new Color(62, 24, 80));
         g2d.drawRect(x, y, diameter, diameter);
 
-        g2d.setColor(new Color(208, 236, 242, 170));
+        g2d.setColor(new Color(198, 150, 72, 180));
         g2d.fillRect(x + radius - 2, y - 4, 4, 6);
         g2d.fillRect(x + radius - 2, y + diameter - 2, 4, 6);
         g2d.fillRect(x - 4, y + radius - 2, 6, 4);
         g2d.fillRect(x + diameter - 2, y + radius - 2, 6, 4);
 
-        g2d.setColor(new Color(34, 116, 140, 150));
+        g2d.setColor(new Color(156, 102, 212, 130));
         for (int i = 0; i < diameter; i += 4) {
             g2d.fillRect(x + i, y + i / 2 % diameter, 2, 2);
         }

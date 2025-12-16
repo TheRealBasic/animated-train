@@ -25,12 +25,12 @@ public class CoopButton {
         int w = (int) bounds.width;
         int h = (int) bounds.height;
 
-        g2d.setColor(new Color(8, 8, 12, 160));
+        g2d.setColor(new Color(8, 6, 16, 170));
         g2d.fillRect(x + 2, y + 2, w, h);
 
-        g2d.setColor(pressed ? new Color(94, 170, 132) : new Color(70, 118, 170));
+        g2d.setColor(pressed ? new Color(120, 214, 172) : new Color(132, 82, 154));
         g2d.fillRect(x, y, w, h);
-        g2d.setColor(new Color(14, 22, 30));
+        g2d.setColor(new Color(24, 12, 34));
         g2d.drawRect(x, y, w, h);
     }
 

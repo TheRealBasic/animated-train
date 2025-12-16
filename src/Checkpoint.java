@@ -33,15 +33,15 @@ public class Checkpoint {
         int y = (int) (position.y - radius);
         int size = radius * 2;
 
-        g2d.setColor(new Color(6, 12, 16, 150));
+        g2d.setColor(new Color(8, 6, 16, 170));
         g2d.fillRect(x + 2, y + 2, size, size);
 
-        g2d.setColor(activated ? new Color(92, 168, 150) : new Color(74, 122, 170));
+        g2d.setColor(activated ? new Color(120, 214, 172) : new Color(132, 82, 154));
         g2d.fillRect(x, y, size, size);
-        g2d.setColor(new Color(26, 44, 64));
+        g2d.setColor(new Color(46, 20, 72));
         g2d.drawRect(x, y, size, size);
 
-        g2d.setColor(new Color(188, 226, 226, 170));
+        g2d.setColor(new Color(198, 150, 72, 180));
         g2d.fillRect(x + size / 2 - 2, y - 6, 4, 8);
         g2d.fillRect(x + size / 2 - 2, y + size - 2, 4, 6);
         g2d.fillRect(x - 6, y + size / 2 - 2, 8, 4);
