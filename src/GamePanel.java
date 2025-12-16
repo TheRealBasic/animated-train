@@ -252,7 +252,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private void handleInput() {
-        double moveSpeed = shiftPressed ? 1.35 : 0.9;
+        double moveSpeed = shiftPressed ? 0.9 : 0.6;
         boolean moveLeft = leftPressed;
         boolean moveRight = rightPressed;
 

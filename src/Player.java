@@ -9,6 +9,7 @@ import java.util.List;
 public class Player {
     private static final double GRAVITY = 0.6;
     private static final double MAX_FALL_SPEED = 12.0;
+    private static final double MAX_RUN_SPEED = 5.0;
     private static final double JUMP_VELOCITY = 10.5;
 
     private double x;
@@ -51,11 +52,13 @@ public class Player {
             if (Math.abs(velY) > MAX_FALL_SPEED) {
                 velY = MAX_FALL_SPEED * Math.signum(velY);
             }
+            velX = clampMagnitude(velX, MAX_RUN_SPEED);
         } else {
             velX += GRAVITY * gravityDir.gravitySign();
             if (Math.abs(velX) > MAX_FALL_SPEED) {
                 velX = MAX_FALL_SPEED * Math.signum(velX);
             }
+            velY = clampMagnitude(velY, MAX_RUN_SPEED);
         }
 
         if (gravityDir.isVertical()) {
@@ -126,6 +129,13 @@ public class Player {
             }
         }
         return null;
+    }
+
+    private double clampMagnitude(double value, double max) {
+        if (Math.abs(value) <= max) {
+            return value;
+        }
+        return max * Math.signum(value);
     }
 
     public void jump(GravityDir gravityDir) {
