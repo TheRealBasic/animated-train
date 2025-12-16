@@ -16,7 +16,9 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 
+@SuppressWarnings({"serial", "this-escape"})
 public class GamePanel extends JPanel implements ActionListener, KeyListener {
+    private static final long serialVersionUID = 1L;
     private static final int BASE_WIDTH = 960;
     private static final int BASE_HEIGHT = 540;
     private static final int PLAYER_W = 24;
