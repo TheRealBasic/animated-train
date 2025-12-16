@@ -298,7 +298,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
     private void syncMultiplayer() {
         MultiplayerSession.RemoteState remote = session.pollRemoteState();
-        if (remote.levelIndex() != null && !waitingForLevelSync) {
+        if (remote.levelIndex() != null) {
             saveData.currentLevelIndex = remote.levelIndex();
             SaveGame.save(saveData);
             loadLevel(remote.levelIndex());
@@ -496,36 +496,47 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
     private void drawCrtOverlay(Graphics2D g2d) {
         double t = System.nanoTime() / 1_000_000_000.0;
+        double flicker = 0.85 + 0.15 * Math.sin(t * 8.0);
         int jitter = (int) (Math.sin(t * 7.3) * 2);
         g2d.translate(jitter, 0);
 
-        GradientPaint vignette = new GradientPaint(0, 0, new Color(10, 12, 16, 140), BASE_WIDTH, BASE_HEIGHT, new Color(4, 6, 10, 200));
+        int vignetteAlpha = (int) (80 + 30 * (1 + Math.sin(t * 0.7)) / 2);
+        GradientPaint vignette = new GradientPaint(0, 0, new Color(10, 18, 26, vignetteAlpha), BASE_WIDTH, BASE_HEIGHT, new Color(4, 6, 10, vignetteAlpha + 30));
         g2d.setPaint(vignette);
         g2d.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
 
-        g2d.setColor(new Color(255, 255, 255, 10));
+        int scanAlpha = (int) (10 + 4 * Math.sin(t * 12.0));
+        g2d.setColor(new Color(255, 255, 255, scanAlpha));
         for (int y = 0; y < BASE_HEIGHT; y += 3) {
-            g2d.drawLine(0, y, BASE_WIDTH, y);
+            int wobble = (int) (Math.sin((t * 0.8) + y * 0.03) * 2);
+            g2d.drawLine(0, y + wobble, BASE_WIDTH, y + wobble);
         }
 
-        g2d.setColor(new Color(40, 160, 220, 18));
+        g2d.setColor(new Color(40, 160, 220, 24));
         g2d.drawRect(-2, -2, BASE_WIDTH + 4, BASE_HEIGHT + 4);
         g2d.setColor(new Color(220, 60, 120, 18));
         g2d.drawRect(3, 3, BASE_WIDTH - 6, BASE_HEIGHT - 6);
 
-        g2d.setColor(new Color(255, 255, 255, 14));
-        for (int i = 0; i < 120; i++) {
+        g2d.setColor(new Color(255, 255, 255, 16));
+        for (int i = 0; i < 160; i++) {
             int x = vhsNoise.nextInt(BASE_WIDTH);
-            int y = vhsNoise.nextInt(BASE_HEIGHT);
+            int y = (int) ((vhsNoise.nextInt(BASE_HEIGHT) + t * 60) % BASE_HEIGHT);
             int w = 1 + vhsNoise.nextInt(3);
-            g2d.fillRect(x, y, w, 1);
+            int h = 1 + vhsNoise.nextInt(2);
+            g2d.fillRect(x, y, w, h);
         }
 
-        g2d.setColor(new Color(0, 0, 0, 120));
+        g2d.setColor(new Color(90, 140, 200, 18));
+        int bandY = (int) ((t * 80) % BASE_HEIGHT);
+        g2d.fillRect(0, bandY, BASE_WIDTH, 6);
+        g2d.fillRect(0, (bandY + BASE_HEIGHT / 2) % BASE_HEIGHT, BASE_WIDTH, 6);
+
+        int borderAlpha = (int) (70 + 40 * flicker);
+        g2d.setColor(new Color(0, 0, 0, borderAlpha));
         g2d.drawRect(0, 0, BASE_WIDTH - 1, BASE_HEIGHT - 1);
-        g2d.setColor(new Color(0, 0, 0, 80));
-        g2d.fillRect(0, 0, BASE_WIDTH, 18);
-        g2d.fillRect(0, BASE_HEIGHT - 18, BASE_WIDTH, 18);
+        g2d.setColor(new Color(0, 0, 0, (int) (50 * flicker)));
+        g2d.fillRect(0, 0, BASE_WIDTH, 14);
+        g2d.fillRect(0, BASE_HEIGHT - 14, BASE_WIDTH, 14);
 
         g2d.translate(-jitter, 0);
     }
