@@ -460,9 +460,15 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
         Graphics2D g2d = (Graphics2D) g;
         g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-        g2d.scale(scale, scale);
+        double renderScale = Math.min(getWidth() / (double) BASE_WIDTH, getHeight() / (double) BASE_HEIGHT);
+        double offsetX = (getWidth() - BASE_WIDTH * renderScale) / 2.0;
+        double offsetY = (getHeight() - BASE_HEIGHT * renderScale) / 2.0;
+        AffineTransform oldTransform = g2d.getTransform();
+        g2d.translate(offsetX, offsetY);
+        g2d.scale(renderScale, renderScale);
         g2d.drawImage(processed, 0, 0, null);
         drawCrtBezel(g2d);
+        g2d.setTransform(oldTransform);
     }
 
     private void renderScene(Graphics2D g2d) {
