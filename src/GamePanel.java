@@ -1046,16 +1046,30 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         String cooldownText = gravityCooldownRemaining <= 0 ? "Gravity Core Ready" : String.format("Recharging: %.1fs", gravityCooldownRemaining);
         g2d.drawString(cooldownText, barX, barY - 12);
 
-        g2d.setColor(new Color(160, 190, 210));
         g2d.setFont(new Font("Consolas", Font.PLAIN, 14));
-        g2d.drawString("Controls: A/D move • Space jump • Shift sprint • R restart • I/J/K/L rotate", 18, BASE_HEIGHT - 28);
+        String controlsText = "Controls: A/D move • Space jump • Shift sprint • R restart • I/J/K/L rotate";
+        int bezelOffset = settings.isReducedEffects() ? 12 : 70;
+        int controlsY = BASE_HEIGHT - bezelOffset;
+        int controlsX = 18;
+        int controlsWidth = g2d.getFontMetrics().stringWidth(controlsText);
+        int controlsHeight = g2d.getFontMetrics().getHeight();
+        int controlsBgY = controlsY - g2d.getFontMetrics().getAscent() - 6;
+        int controlsBgHeight = controlsHeight + 12;
+
+        g2d.setColor(new Color(10, 16, 26, 200));
+        g2d.fillRoundRect(controlsX - 10, controlsBgY, controlsWidth + 20, controlsBgHeight, 10, 10);
+        g2d.setColor(new Color(160, 190, 210));
+        g2d.drawString(controlsText, controlsX, controlsY);
+
         if (settings.isShowDebugHud()) {
-            g2d.drawString("Position: (" + (int) player.getX() + ", " + (int) player.getY() + ")", 18, BASE_HEIGHT - 50);
-            g2d.drawString("Velocity: (" + String.format("%.2f", player.getVelX()) + ", " + String.format("%.2f", player.getVelY()) + ")", 18, BASE_HEIGHT - 70);
+            int debugY = controlsBgY - 8;
+            g2d.drawString("Position: (" + (int) player.getX() + ", " + (int) player.getY() + ")", controlsX, debugY - 2);
+            g2d.drawString("Velocity: (" + String.format("%.2f", player.getVelX()) + ", " + String.format("%.2f", player.getVelY()) + ")", controlsX, debugY - 22);
         }
         if (settings.isShowFps()) {
             String fpsText = String.format("FPS: %.0f", fpsDisplay);
-            g2d.drawString(fpsText, BASE_WIDTH - 120, BASE_HEIGHT - 28);
+            int fpsX = BASE_WIDTH - g2d.getFontMetrics().stringWidth(fpsText) - 18;
+            g2d.drawString(fpsText, fpsX, controlsY);
         }
 
         if (!toastMessage.isEmpty()) {
