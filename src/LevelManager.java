@@ -57,6 +57,10 @@ public class LevelManager {
         double spawnY = toDouble(spawn.get("y"));
         GravityDir spawnGravity = GravityDir.valueOf(((String) spawn.getOrDefault("gravity", "DOWN")).toUpperCase());
 
+        Map<String, Object> partnerSpawn = asStringObjectMap(json.getOrDefault("partnerSpawn", spawn));
+        double partnerX = toDouble(partnerSpawn.getOrDefault("x", spawnX + 30));
+        double partnerY = toDouble(partnerSpawn.getOrDefault("y", spawnY));
+
         Map<String, Object> gate = asStringObjectMap(json.get("exitGate"));
         if (gate == null) {
             return null;
@@ -73,10 +77,13 @@ public class LevelManager {
         List<Spike> spikes = parseSpikes(asMapList(json.get("spikes")));
         List<Checkpoint> checkpoints = parseCheckpoints(asMapList(json.get("checkpoints")));
         List<Point2D.Double> orbs = parsePoints(asMapList(json.get("orbs")));
+        List<CoopButton> buttons = parseButtons(asMapList(json.get("buttons")));
+        List<CoopDoor> doors = parseDoors(asMapList(json.get("doors")), buttons.size());
+        boolean multiplayerOnly = Boolean.TRUE.equals(json.get("multiplayerOnly"));
 
-        return new LevelData(name, platforms, orbs, movers, spikes, checkpoints,
+        return new LevelData(name, platforms, orbs, movers, spikes, checkpoints, buttons, doors,
                 gateX, gateY, gateW, gateH,
-                new Point2D.Double(spawnX, spawnY), spawnGravity, par);
+                new Point2D.Double(spawnX, spawnY), new Point2D.Double(partnerX, partnerY), spawnGravity, par, multiplayerOnly);
     }
 
     private List<Platform> parsePlatforms(List<Map<String, Object>> list) {
@@ -133,6 +140,43 @@ public class LevelManager {
         return points;
     }
 
+    private List<CoopButton> parseButtons(List<Map<String, Object>> list) {
+        List<CoopButton> buttons = new ArrayList<>();
+        if (list == null) {
+            return buttons;
+        }
+        for (Map<String, Object> map : list) {
+            buttons.add(new CoopButton(toDouble(map.get("x")), toDouble(map.get("y")),
+                    toDouble(map.getOrDefault("w", 24)), toDouble(map.getOrDefault("h", 12))));
+        }
+        return buttons;
+    }
+
+    private List<CoopDoor> parseDoors(List<Map<String, Object>> list, int buttonCount) {
+        List<CoopDoor> doors = new ArrayList<>();
+        if (list == null) {
+            return doors;
+        }
+        for (Map<String, Object> map : list) {
+            List<Integer> links = new ArrayList<>();
+            Object rawLinks = map.get("buttons");
+            if (rawLinks instanceof List<?> rawList) {
+                for (Object obj : rawList) {
+                    try {
+                        int idx = Integer.parseInt(String.valueOf(obj));
+                        if (idx >= 0 && idx < buttonCount) {
+                            links.add(idx);
+                        }
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+            }
+            doors.add(new CoopDoor(toDouble(map.get("x")), toDouble(map.get("y")),
+                    toDouble(map.getOrDefault("w", 24)), toDouble(map.getOrDefault("h", 80)), links));
+        }
+        return doors;
+    }
+
     private double toDouble(Object value) {
         if (value instanceof Number) {
             return ((Number) value).doubleValue();
@@ -177,5 +221,17 @@ public class LevelManager {
 
     public int getLevelCount() {
         return levels.size();
+    }
+
+    public int indexOf(LevelData data) {
+        return levels.indexOf(data);
+    }
+
+    public List<LevelData> getSoloLevels() {
+        return levels.stream().filter(l -> !l.isMultiplayerOnly()).collect(Collectors.toList());
+    }
+
+    public List<LevelData> getMultiplayerLevels() {
+        return levels.stream().filter(LevelData::isMultiplayerOnly).collect(Collectors.toList());
     }
 }

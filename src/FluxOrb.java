@@ -47,6 +47,10 @@ public class FluxOrb {
         return false;
     }
 
+    public void setCollected(boolean value) {
+        this.collected = value;
+    }
+
     private double clamp(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
     }

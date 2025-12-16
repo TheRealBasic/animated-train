@@ -14,9 +14,11 @@ import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.awt.geom.Point2D;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
+import java.util.Optional;
 
 @SuppressWarnings({"serial", "this-escape"})
 public class GamePanel extends JPanel implements ActionListener, KeyListener {
@@ -31,6 +33,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
     private final Timer timer;
     private final Player player;
+    private Player partner;
     private final EnumMap<GravityDir, Point2D.Double> lastSafeGroundedPos;
     private final LevelManager levelManager;
     private List<Platform> platforms;
@@ -38,9 +41,12 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private List<Spike> spikes;
     private List<Checkpoint> checkpoints;
     private List<FluxOrb> orbs;
+    private List<CoopButton> buttons;
+    private List<CoopDoor> doors;
     private ExitGate exitGate;
     private ObjectiveManager objectiveManager;
     private GravityDir gravityDir;
+    private GravityDir partnerGravity;
     private boolean leftPressed;
     private boolean rightPressed;
     private boolean jumpPressed;
@@ -65,9 +71,20 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private GravityDir respawnGravity;
     private int deathCount;
     private long lastTickNanos = System.nanoTime();
+    private boolean multiplayerActive;
+    private boolean multiplayerHost;
+    private MultiplayerSession session;
+    private long localOrbMask;
+    private long remoteOrbMask;
+    private int multiplayerMenuIndex = 0;
+    private int multiplayerLevelIndex = 0;
+    private boolean waitingForLevelSync;
+    private String directIpInput = "127.0.0.1";
 
     private enum GameState {
         MAIN_MENU,
+        MULTIPLAYER_MENU,
+        MULTIPLAYER_WAIT,
         SETTINGS,
         LEVEL_SELECT,
         IN_GAME,
@@ -88,6 +105,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         gravityDir = GravityDir.DOWN;
         gravityCooldownRemaining = 0;
         player = new Player(0, 0, PLAYER_W, PLAYER_H);
+        partner = new Player(0, 0, PLAYER_W, PLAYER_H);
 
         levelManager = new LevelManager();
         saveData = SaveGame.load(levelManager.getLevelCount());
@@ -111,6 +129,8 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         spikes = data.getSpikes();
         checkpoints = data.getCheckpoints();
         orbs = new ArrayList<>();
+        buttons = data.getButtons();
+        doors = data.getDoors();
         for (Point2D.Double pos : data.getOrbPositions()) {
             orbs.add(new FluxOrb(pos, 12));
         }
@@ -119,17 +139,24 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         objectiveManager = new ObjectiveManager(orbs, exitGate, data.getParTimeSeconds());
         objectiveManager.resetTimer();
         Point2D.Double spawn = data.getSpawnPosition();
+        Point2D.Double partnerSpawn = data.getPartnerSpawnPosition();
         player.setPosition(spawn.x, spawn.y);
         player.resetVelocity();
+        partner.setPosition(partnerSpawn.x, partnerSpawn.y);
+        partner.resetVelocity();
         gravityDir = data.getSpawnGravity();
+        partnerGravity = data.getSpawnGravity();
         respawnPosition = new Point2D.Double(spawn.x, spawn.y);
         respawnGravity = gravityDir;
         deathCount = 0;
+        localOrbMask = 0;
+        remoteOrbMask = 0;
         lastSafeGroundedPos.clear();
         for (GravityDir dir : GravityDir.values()) {
             lastSafeGroundedPos.put(dir, new Point2D.Double(spawn.x, spawn.y));
         }
         gravityCooldownRemaining = 0;
+        waitingForLevelSync = false;
     }
 
     @Override
@@ -143,8 +170,16 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             handleInput();
             updateMovingPlatforms(dt);
             player.applyPhysics(getAllPlatforms(), gravityDir);
+            if (multiplayerActive && session != null) {
+                syncMultiplayer();
+            }
             if (player.isGrounded()) {
                 lastSafeGroundedPos.put(gravityDir, new Point2D.Double(player.getX(), player.getY()));
+            }
+            updateCoopButtons();
+            collectOrbs(player, true);
+            if (multiplayerActive) {
+                collectOrbs(partner, false);
             }
             handleKillPlane();
             handleCheckpoints();
@@ -205,6 +240,64 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
     }
 
+    private void collectOrbs(Player target, boolean localPlayer) {
+        if (target == null) {
+            return;
+        }
+        for (int i = 0; i < orbs.size(); i++) {
+            FluxOrb orb = orbs.get(i);
+            if (orb.checkCollected(target)) {
+                if (localPlayer) {
+                    localOrbMask |= (1L << i);
+                } else {
+                    remoteOrbMask |= (1L << i);
+                }
+            }
+            boolean collected = ((localOrbMask | remoteOrbMask) & (1L << i)) != 0;
+            orb.setCollected(collected);
+        }
+    }
+
+    private void updateCoopButtons() {
+        if (buttons == null || doors == null) {
+            return;
+        }
+        for (CoopButton button : buttons) {
+            boolean pressed = button.check(player);
+            if (multiplayerActive) {
+                pressed = button.check(player) || button.check(partner);
+            }
+            if (!pressed) {
+                button.check(player);
+            }
+        }
+        for (CoopDoor door : doors) {
+            door.update(buttons);
+        }
+    }
+
+    private void syncMultiplayer() {
+        MultiplayerSession.RemoteState remote = session.pollRemoteState();
+        if (remote.levelIndex() != null && !waitingForLevelSync) {
+            saveData.currentLevelIndex = remote.levelIndex();
+            SaveGame.save(saveData);
+            loadLevel(remote.levelIndex());
+            multiplayerActive = true;
+            waitingForLevelSync = false;
+            gameState = GameState.IN_GAME;
+        }
+        if (remote.x() != null && remote.y() != null && remote.gravity() != null) {
+            partner.setPosition(remote.x(), remote.y());
+            partnerGravity = remote.gravity();
+            if (remote.orbMask() != null) {
+                remoteOrbMask = remote.orbMask();
+            }
+        }
+        if (session != null) {
+            session.sendState(player.getX(), player.getY(), gravityDir, localOrbMask);
+        }
+    }
+
     private void handleCheckpoints() {
         for (Checkpoint checkpoint : checkpoints) {
             if (!checkpoint.isActivated() && checkpoint.check(player)) {
@@ -230,6 +323,12 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private List<Platform> getAllPlatforms() {
         List<Platform> all = new ArrayList<>(platforms);
         all.addAll(movers);
+        for (CoopDoor door : doors) {
+            if (!multiplayerActive || !door.blocks(partner)) {
+                // closed doors behave as solid walls for everyone
+                all.add(new Platform(door.getBounds().x, door.getBounds().y, (int) door.getBounds().width, (int) door.getBounds().height));
+            }
+        }
         return all;
     }
 
@@ -318,6 +417,14 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 drawTitle(g2d, "Gravity Warp Trials");
                 drawMainMenu(g2d);
                 break;
+            case MULTIPLAYER_MENU:
+                drawTitle(g2d, "Multiplayer Co-op");
+                drawMultiplayerMenu(g2d);
+                break;
+            case MULTIPLAYER_WAIT:
+                drawTitle(g2d, "Waiting for partner...");
+                drawMultiplayerWait(g2d);
+                break;
             case SETTINGS:
                 drawTitle(g2d, "Settings");
                 drawSettingsMenu(g2d);
@@ -381,6 +488,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 "Continue",
                 "New Game",
                 "Level Select",
+                "Multiplayer",
                 "Settings",
                 "Credits",
                 "Quit"
@@ -397,6 +505,35 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             g2d.drawString(text, (BASE_WIDTH - width) / 2, startY + i * 36);
         }
         drawControlHint(g2d, "Use W/S or Up/Down to navigate, Enter to select");
+    }
+
+    private void drawMultiplayerMenu(Graphics2D g2d) {
+        g2d.setFont(new Font("Consolas", Font.PLAIN, 18));
+        String[] options = new String[]{
+                "Host (Direct IP 9484)",
+                "Join (Direct IP)",
+                "LAN Quick Connect",
+                "Back"
+        };
+        int startY = 210;
+        for (int i = 0; i < options.length; i++) {
+            g2d.setColor(multiplayerMenuIndex == i ? new Color(190, 255, 180) : new Color(230, 235, 243));
+            String text = options[i];
+            int width = g2d.getFontMetrics().stringWidth(text);
+            g2d.drawString(text, (BASE_WIDTH - width) / 2, startY + i * 32);
+        }
+        g2d.setColor(new Color(180, 220, 255));
+        g2d.drawString("Target IP: " + directIpInput, (BASE_WIDTH - 360) / 2, startY + options.length * 32 + 12);
+        drawControlHint(g2d, "Use numbers and dot to edit IP, Enter to select");
+    }
+
+    private void drawMultiplayerWait(Graphics2D g2d) {
+        g2d.setFont(new Font("Consolas", Font.PLAIN, 18));
+        g2d.setColor(new Color(230, 235, 243));
+        String status = multiplayerHost ? "Hosting on port 9484..." : "Connecting to " + directIpInput + "...";
+        int width = g2d.getFontMetrics().stringWidth(status);
+        g2d.drawString(status, (BASE_WIDTH - width) / 2, 240);
+        drawControlHint(g2d, "Esc to cancel");
     }
 
     private void drawSettingsMenu(Graphics2D g2d) {
@@ -460,7 +597,20 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         for (FluxOrb orb : orbs) {
             orb.draw(g2d);
         }
+        if (buttons != null) {
+            for (CoopButton button : buttons) {
+                button.draw(g2d);
+            }
+        }
+        if (doors != null) {
+            for (CoopDoor door : doors) {
+                door.draw(g2d);
+            }
+        }
         player.draw(g2d, gravityDir);
+        if (multiplayerActive) {
+            partner.draw(g2d, partnerGravity, new Color(180, 220, 255), new Color(120, 180, 255));
+        }
     }
 
     private void drawPlatformBlock(Graphics2D g2d, Platform platform, Color base, Color highlight) {
@@ -627,7 +777,18 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
 
         if (gameState == GameState.MAIN_MENU) {
-            handleMenuNavigation(e, 6, () -> handleMainMenuSelect(mainMenuIndex));
+            handleMenuNavigation(e, 7, () -> handleMainMenuSelect(mainMenuIndex));
+            return;
+        }
+        if (gameState == GameState.MULTIPLAYER_MENU) {
+            handleMenuNavigation(e, 4, () -> handleMultiplayerSelect(multiplayerMenuIndex));
+            return;
+        }
+        if (gameState == GameState.MULTIPLAYER_WAIT) {
+            if (e.getKeyCode() == KeyEvent.VK_ESCAPE) {
+                closeSession();
+                gameState = GameState.MULTIPLAYER_MENU;
+            }
             return;
         }
         if (gameState == GameState.CREDITS) {
@@ -756,15 +917,19 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 gameState = GameState.LEVEL_SELECT;
                 levelSelectIndex = 0;
                 break;
-            case 3: // Settings
+            case 3: // Multiplayer
+                gameState = GameState.MULTIPLAYER_MENU;
+                multiplayerMenuIndex = 0;
+                break;
+            case 4: // Settings
                 previousStateBeforeSettings = GameState.MAIN_MENU;
                 gameState = GameState.SETTINGS;
                 settingsMenuIndex = 0;
                 break;
-            case 4: // Credits
+            case 5: // Credits
                 gameState = GameState.CREDITS;
                 break;
-            case 5: // Quit
+            case 6: // Quit
                 System.exit(0);
                 break;
         }
@@ -787,6 +952,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             case 3:
                 SaveGame.save(saveData);
                 settings.save();
+                closeSession();
                 gameState = GameState.MAIN_MENU;
                 break;
         }
@@ -807,6 +973,81 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 nextLevel();
                 break;
             case 1:
+                gameState = GameState.MAIN_MENU;
+                break;
+        }
+    }
+
+    private LevelData getCurrentMultiplayerLevel() {
+        List<LevelData> coop = levelManager.getMultiplayerLevels();
+        if (coop.isEmpty()) {
+            return levelManager.getLevel(Math.max(0, levelManager.getLevelCount() - 1));
+        }
+        multiplayerLevelIndex = Math.max(0, Math.min(multiplayerLevelIndex, coop.size() - 1));
+        return coop.get(multiplayerLevelIndex);
+    }
+
+    private void startHostingSession() {
+        closeSession();
+        multiplayerHost = true;
+        multiplayerActive = true;
+        gameState = GameState.MULTIPLAYER_WAIT;
+        new Thread(() -> {
+            try {
+                MultiplayerSession.advertiseLanHost();
+                session = MultiplayerSession.host();
+                LevelData level = getCurrentMultiplayerLevel();
+                int idx = levelManager.indexOf(level);
+                saveData.currentLevelIndex = idx;
+                SaveGame.save(saveData);
+                session.sendLevelIndex(idx);
+                loadLevel(idx);
+                gameState = GameState.IN_GAME;
+            } catch (IOException ex) {
+                System.err.println("Multiplayer host failed: " + ex.getMessage());
+                gameState = GameState.MULTIPLAYER_MENU;
+            }
+        }).start();
+    }
+
+    private void startClientSession(String ip) {
+        closeSession();
+        multiplayerHost = false;
+        multiplayerActive = true;
+        waitingForLevelSync = true;
+        gameState = GameState.MULTIPLAYER_WAIT;
+        new Thread(() -> {
+            try {
+                session = MultiplayerSession.join(ip);
+            } catch (IOException ex) {
+                System.err.println("Multiplayer join failed: " + ex.getMessage());
+                gameState = GameState.MULTIPLAYER_MENU;
+            }
+        }).start();
+    }
+
+    private void closeSession() {
+        if (session != null) {
+            session.close();
+            session = null;
+        }
+        multiplayerActive = false;
+    }
+
+    private void handleMultiplayerSelect(int index) {
+        switch (index) {
+            case 0:
+                startHostingSession();
+                break;
+            case 1:
+                startClientSession(directIpInput);
+                break;
+            case 2:
+                Optional<String> lanIp = MultiplayerSession.discoverLanHost();
+                lanIp.ifPresent(ip -> directIpInput = ip);
+                startClientSession(directIpInput);
+                break;
+            case 3:
                 gameState = GameState.MAIN_MENU;
                 break;
         }
@@ -900,6 +1141,13 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
     @Override
     public void keyTyped(KeyEvent e) {
-        // not used
+        if (gameState == GameState.MULTIPLAYER_MENU) {
+            char c = e.getKeyChar();
+            if ((c >= '0' && c <= '9') || c == '.') {
+                directIpInput += c;
+            } else if (c == '\b' && !directIpInput.isEmpty()) {
+                directIpInput = directIpInput.substring(0, directIpInput.length() - 1);
+            }
+        }
     }
 }
