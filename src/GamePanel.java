@@ -6,7 +6,9 @@ import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.GradientPaint;
 import java.awt.RenderingHints;
+import java.awt.BasicStroke;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
@@ -25,6 +27,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private static final int PLAYER_H = 38;
     private static final int KILL_PADDING = 500;
     private static final double FRICTION = 0.85;
+    private static final double GRAVITY_COOLDOWN = 0.4;
 
     private final Timer timer;
     private final Player player;
@@ -45,6 +48,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
     private Settings settings;
     private SaveGame.SaveData saveData;
+    private double gravityCooldownRemaining;
 
     private GameState gameState = GameState.MAIN_MENU;
     private int mainMenuIndex = 0;
@@ -82,6 +86,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
         lastSafeGroundedPos = new EnumMap<>(GravityDir.class);
         gravityDir = GravityDir.DOWN;
+        gravityCooldownRemaining = 0;
         player = new Player(0, 0, PLAYER_W, PLAYER_H);
 
         levelManager = new LevelManager();
@@ -124,6 +129,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         for (GravityDir dir : GravityDir.values()) {
             lastSafeGroundedPos.put(dir, new Point2D.Double(spawn.x, spawn.y));
         }
+        gravityCooldownRemaining = 0;
     }
 
     @Override
@@ -133,6 +139,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         dt = Math.min(dt, 0.05);
         lastTickNanos = now;
         if (gameState == GameState.IN_GAME) {
+            updateGravityCooldown(dt);
             handleInput();
             updateMovingPlatforms(dt);
             player.applyPhysics(getAllPlatforms(), gravityDir);
@@ -226,6 +233,12 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         return all;
     }
 
+    private void updateGravityCooldown(double dt) {
+        if (gravityCooldownRemaining > 0) {
+            gravityCooldownRemaining = Math.max(0, gravityCooldownRemaining - dt);
+        }
+    }
+
     private boolean collidesWithPlatform(double px, double py) {
         for (Platform p : platforms) {
             boolean overlapX = px + player.getWidth() > p.getX() && px < p.getX() + p.getWidth();
@@ -238,7 +251,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private void changeGravity(GravityDir newDir) {
-        if (gravityDir == newDir) {
+        if (gravityDir == newDir || gravityCooldownRemaining > 0) {
             return;
         }
 
@@ -247,13 +260,19 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         gravityDir = newDir;
         player.resetVelocity();
 
+        boolean reverted = false;
         if (collidesWithPlatform(player.getX(), player.getY())) {
             Point2D.Double safePos = lastSafeGroundedPos.getOrDefault(newDir, respawnPosition);
             player.setPosition(safePos.x, safePos.y);
             if (collidesWithPlatform(player.getX(), player.getY())) {
                 gravityDir = previousDir;
                 player.setPosition(previousPos.x, previousPos.y);
+                reverted = true;
             }
+        }
+
+        if (!reverted && gravityDir == newDir) {
+            gravityCooldownRemaining = GRAVITY_COOLDOWN;
         }
     }
 
@@ -327,14 +346,25 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private void drawBackground(Graphics2D g2d) {
-        g2d.setColor(new Color(33, 42, 56));
+        GradientPaint sky = new GradientPaint(0, 0, new Color(10, 16, 28), 0, BASE_HEIGHT, new Color(4, 9, 15));
+        g2d.setPaint(sky);
         g2d.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
-        g2d.setColor(new Color(52, 63, 82));
-        for (int x = 0; x < BASE_WIDTH; x += 40) {
-            g2d.drawLine(x, 0, x, BASE_HEIGHT);
+
+        g2d.setColor(new Color(60, 140, 200, 60));
+        for (int y = -100; y < BASE_HEIGHT + 100; y += 80) {
+            g2d.fillRect(-40, y, BASE_WIDTH + 80, 32);
         }
-        for (int y = 0; y < BASE_HEIGHT; y += 40) {
-            g2d.drawLine(0, y, BASE_WIDTH, y);
+
+        g2d.setColor(new Color(255, 255, 255, 20));
+        for (int i = 0; i < BASE_WIDTH; i += 90) {
+            int offset = (i / 90) % 2 == 0 ? 20 : -20;
+            g2d.drawLine(i + offset, 0, i - offset, BASE_HEIGHT);
+        }
+
+        g2d.setColor(new Color(80, 120, 200, 28));
+        for (int i = 0; i < 14; i++) {
+            int size = 160 + i * 12;
+            g2d.drawOval(BASE_WIDTH - size, 40 - (i * 6), size, size);
         }
     }
 
@@ -414,13 +444,11 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private void drawWorld(Graphics2D g2d) {
-        g2d.setColor(new Color(99, 209, 255));
         for (Platform platform : platforms) {
-            g2d.fillRect((int) platform.getX(), (int) platform.getY(), platform.getWidth(), platform.getHeight());
+            drawPlatformBlock(g2d, platform, new Color(54, 102, 144), new Color(98, 190, 255));
         }
-        g2d.setColor(new Color(120, 200, 255));
         for (MovingPlatform mover : movers) {
-            g2d.fillRect((int) mover.getX(), (int) mover.getY(), mover.getWidth(), mover.getHeight());
+            drawPlatformBlock(g2d, mover, new Color(74, 126, 180), new Color(180, 240, 255));
         }
         exitGate.draw(g2d);
         for (Checkpoint checkpoint : checkpoints) {
@@ -435,20 +463,89 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         player.draw(g2d, gravityDir);
     }
 
+    private void drawPlatformBlock(Graphics2D g2d, Platform platform, Color base, Color highlight) {
+        int x = (int) platform.getX();
+        int y = (int) platform.getY();
+        int w = platform.getWidth();
+        int h = platform.getHeight();
+
+        Color shadow = new Color(0, 0, 0, 80);
+        g2d.setColor(shadow);
+        g2d.fillRoundRect(x + 4, y + 4, w, h, 10, 10);
+
+        GradientPaint paint = new GradientPaint(x, y, highlight, x, y + h, base);
+        g2d.setPaint(paint);
+        g2d.fillRoundRect(x, y, w, h, 10, 10);
+
+        g2d.setColor(new Color(255, 255, 255, 40));
+        g2d.fillRoundRect(x + 3, y + 3, w - 6, Math.max(6, h / 4), 8, 8);
+
+        java.awt.Stroke old = g2d.getStroke();
+        g2d.setStroke(new BasicStroke(2f));
+        g2d.setColor(new Color(14, 22, 32, 180));
+        g2d.drawRoundRect(x, y, w, h, 10, 10);
+        g2d.setStroke(old);
+        g2d.setColor(new Color(255, 255, 255, 30));
+        g2d.drawRoundRect(x + 1, y + 1, w - 2, h - 2, 10, 10);
+    }
+
     private void drawHud(Graphics2D g2d) {
-        g2d.setColor(new Color(230, 235, 243));
-        g2d.setFont(new Font("Consolas", Font.PLAIN, 16));
         long collected = orbs.stream().filter(FluxOrb::isCollected).count();
-        g2d.drawString("Orbs: " + collected + "/" + orbs.size(), 14, 22);
-        g2d.drawString("Gate: " + (exitGate.isUnlocked() ? "Unlocked" : "Locked"), 14, 42);
-        g2d.drawString("Gravity: " + gravityDir.name(), 14, 62);
-        g2d.drawString("Time: " + String.format("%.1fs", objectiveManager.getElapsedTime()), 14, 82);
-        g2d.drawString("Par: " + String.format("%.1fs", objectiveManager.getParTimeSeconds()), 14, 102);
-        g2d.drawString("Deaths: " + deathCount, 14, 122);
-        g2d.drawString("Controls: A/D move • Space jump • I/J/K/L rotate gravity", 14, 142);
+
+        Color panelBg = new Color(10, 16, 26, 180);
+        Color panelBorder = new Color(120, 200, 255, 150);
+        g2d.setColor(panelBg);
+        g2d.fillRoundRect(10, 10, 270, 175, 14, 14);
+        g2d.setColor(panelBorder);
+        g2d.drawRoundRect(10, 10, 270, 175, 14, 14);
+
+        g2d.setColor(new Color(226, 240, 255));
+        g2d.setFont(new Font("Consolas", Font.BOLD, 18));
+        g2d.drawString("Mission Data", 24, 36);
+
+        g2d.setFont(new Font("Consolas", Font.PLAIN, 16));
+        g2d.setColor(new Color(200, 220, 235));
+        g2d.drawString("Orbs: " + collected + "/" + orbs.size(), 24, 62);
+        g2d.drawString("Gate: " + (exitGate.isUnlocked() ? "Unlocked" : "Locked"), 24, 84);
+        g2d.drawString("Gravity: " + gravityDir.name(), 24, 106);
+        g2d.drawString("Time: " + String.format("%.1fs", objectiveManager.getElapsedTime()), 24, 128);
+        g2d.drawString("Par: " + String.format("%.1fs", objectiveManager.getParTimeSeconds()), 24, 150);
+        g2d.drawString("Deaths: " + deathCount, 24, 172);
+
+        int cooldownX = BASE_WIDTH - 230;
+        int cooldownY = 16;
+        int cooldownWidth = 210;
+        int cooldownHeight = 92;
+        g2d.setColor(panelBg);
+        g2d.fillRoundRect(cooldownX, cooldownY, cooldownWidth, cooldownHeight, 14, 14);
+        g2d.setColor(panelBorder);
+        g2d.drawRoundRect(cooldownX, cooldownY, cooldownWidth, cooldownHeight, 14, 14);
+
+        double readiness = 1.0 - Math.min(1.0, gravityCooldownRemaining / GRAVITY_COOLDOWN);
+        int barX = cooldownX + 16;
+        int barY = cooldownY + 48;
+        int barW = cooldownWidth - 32;
+        int barH = 18;
+        g2d.setColor(new Color(22, 34, 52, 200));
+        g2d.fillRoundRect(barX, barY, barW, barH, 10, 10);
+
+        int filled = (int) (barW * readiness);
+        GradientPaint barPaint = new GradientPaint(barX, barY, new Color(120, 236, 255), barX + filled, barY + barH, new Color(0, 180, 200));
+        g2d.setPaint(barPaint);
+        g2d.fillRoundRect(barX, barY, filled, barH, 10, 10);
+        g2d.setColor(new Color(170, 220, 255));
+        g2d.drawRoundRect(barX, barY, barW, barH, 10, 10);
+
+        g2d.setFont(new Font("Consolas", Font.BOLD, 15));
+        String cooldownText = gravityCooldownRemaining <= 0 ? "Gravity Core Ready" : String.format("Recharging: %.1fs", gravityCooldownRemaining);
+        g2d.drawString(cooldownText, barX, barY - 12);
+
+        g2d.setColor(new Color(160, 190, 210));
+        g2d.setFont(new Font("Consolas", Font.PLAIN, 14));
+        g2d.drawString("Controls: A/D move • Space jump • I/J/K/L rotate", 18, BASE_HEIGHT - 28);
         if (settings.isShowDebugHud()) {
-            g2d.drawString("Position: (" + (int) player.getX() + ", " + (int) player.getY() + ")", 14, 162);
-            g2d.drawString("Velocity: (" + String.format("%.2f", player.getVelX()) + ", " + String.format("%.2f", player.getVelY()) + ")", 14, 182);
+            g2d.drawString("Position: (" + (int) player.getX() + ", " + (int) player.getY() + ")", 18, BASE_HEIGHT - 50);
+            g2d.drawString("Velocity: (" + String.format("%.2f", player.getVelX()) + ", " + String.format("%.2f", player.getVelY()) + ")", 18, BASE_HEIGHT - 70);
         }
     }
 

@@ -1,5 +1,6 @@
 import java.awt.Color;
 import java.awt.Graphics2D;
+import java.awt.BasicStroke;
 
 public class Spike {
     private final double x;
@@ -25,9 +26,19 @@ public class Spike {
     }
 
     public void draw(Graphics2D g2d) {
-        g2d.setColor(new Color(220, 120, 120));
-        g2d.fillRect((int) x, (int) y, width, height);
-        g2d.setColor(new Color(120, 40, 40));
-        g2d.drawRect((int) x, (int) y, width, height);
+        int teeth = Math.max(3, width / 14);
+        int toothWidth = Math.max(8, width / teeth);
+        g2d.setColor(new Color(255, 120, 120, 220));
+        for (int i = 0; i < teeth; i++) {
+            int startX = (int) x + i * toothWidth;
+            int[] xs = {startX, startX + toothWidth / 2, startX + toothWidth};
+            int[] ys = {(int) (y + height), (int) y, (int) (y + height)};
+            g2d.fillPolygon(xs, ys, 3);
+        }
+        java.awt.Stroke old = g2d.getStroke();
+        g2d.setStroke(new BasicStroke(2f));
+        g2d.setColor(new Color(140, 40, 40, 220));
+        g2d.drawLine((int) x, (int) (y + height), (int) (x + width), (int) (y + height));
+        g2d.setStroke(old);
     }
 }

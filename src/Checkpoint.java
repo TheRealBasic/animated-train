@@ -29,9 +29,13 @@ public class Checkpoint {
     }
 
     public void draw(Graphics2D g2d) {
-        g2d.setColor(activated ? new Color(168, 255, 190) : new Color(110, 160, 200));
+        Color aura = activated ? new Color(140, 255, 200, 120) : new Color(90, 150, 220, 110);
+        g2d.setColor(aura);
+        g2d.fillOval((int) (position.x - radius * 1.6), (int) (position.y - radius * 1.6), (int) (radius * 3.2), (int) (radius * 3.2));
+
+        g2d.setColor(activated ? new Color(180, 255, 210) : new Color(140, 190, 230));
         g2d.fillOval((int) (position.x - radius), (int) (position.y - radius), radius * 2, radius * 2);
-        g2d.setColor(new Color(40, 80, 120));
+        g2d.setColor(new Color(30, 70, 100));
         g2d.drawOval((int) (position.x - radius), (int) (position.y - radius), radius * 2, radius * 2);
     }
 

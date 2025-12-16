@@ -1,5 +1,7 @@
 import java.awt.Color;
 import java.awt.Graphics2D;
+import java.awt.BasicStroke;
+import java.awt.GradientPaint;
 import java.awt.geom.AffineTransform;
 import java.util.List;
 
@@ -159,6 +161,7 @@ public class Player {
 
     public void draw(Graphics2D g2d, GravityDir gravityDir) {
         AffineTransform old = g2d.getTransform();
+        java.awt.Stroke oldStroke = g2d.getStroke();
         double centerX = x + width / 2.0;
         double centerY = y + height / 2.0;
         double angle = 0;
@@ -177,8 +180,22 @@ public class Player {
                 break;
         }
         g2d.rotate(angle, centerX, centerY);
-        g2d.setColor(new Color(255, 196, 84));
-        g2d.fillRect((int) x, (int) y, width, height);
+        GradientPaint suit = new GradientPaint((float) x, (float) y, new Color(255, 209, 120), (float) (x + width), (float) (y + height), new Color(255, 170, 64));
+        g2d.setPaint(suit);
+        g2d.fillRoundRect((int) x, (int) y, width, height, 10, 10);
+        g2d.setColor(new Color(255, 255, 255, 70));
+        g2d.fillRoundRect((int) x + 3, (int) y + 4, width - 6, Math.max(6, (int) (height / 3.5)), 8, 8);
+
+        g2d.setStroke(new BasicStroke(2f));
+        g2d.setColor(new Color(60, 40, 20, 180));
+        g2d.drawRoundRect((int) x, (int) y, width, height, 10, 10);
+
+        g2d.setColor(new Color(40, 80, 120, 200));
+        g2d.fillRoundRect((int) x + 4, (int) y + height / 3, width - 8, height / 3, 8, 8);
+        g2d.setColor(new Color(140, 210, 255, 160));
+        g2d.fillRoundRect((int) x + 6, (int) y + height / 3 + 4, width - 14, height / 5, 6, 6);
+
+        g2d.setStroke(oldStroke);
         g2d.setTransform(old);
     }
 
