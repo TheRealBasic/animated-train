@@ -924,10 +924,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
     private void drawWorld(Graphics2D g2d) {
         for (Platform platform : platforms) {
-            drawPlatformBlock(g2d, platform, new Color(46, 88, 116), new Color(122, 178, 212));
+            drawPlatformBlock(g2d, platform, new Color(34, 64, 82), new Color(86, 130, 150));
         }
         for (MovingPlatform mover : movers) {
-            drawPlatformBlock(g2d, mover, new Color(64, 104, 148), new Color(180, 220, 250));
+            drawPlatformBlock(g2d, mover, new Color(52, 84, 122), new Color(120, 170, 210));
         }
         exitGate.draw(g2d);
         for (Checkpoint checkpoint : checkpoints) {
@@ -951,7 +951,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
         player.draw(g2d, gravityDir);
         if (multiplayerActive) {
-            partner.draw(g2d, partnerGravity, new Color(180, 220, 255), new Color(120, 180, 255));
+            partner.draw(g2d, partnerGravity, new Color(120, 170, 210), new Color(86, 130, 176));
         }
     }
 
@@ -970,7 +970,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.fillRect(x, y, w, 6);
         g2d.fillRect(x, y + h - 8, w, 6);
 
-        g2d.setColor(new Color(255, 255, 255, 24));
+        g2d.setColor(new Color(200, 215, 230, 22));
         for (int px = x + 2; px < x + w - 2; px += 6) {
             for (int py = y + 2; py < y + h - 2; py += 6) {
                 if (((px + py) / 6) % 2 == 0) {
