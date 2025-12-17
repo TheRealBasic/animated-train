@@ -493,7 +493,8 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
         timeSinceRemote = 0;
         if (remote.levelIndex() != null) {
-            multiplayerLevelIndex = Math.max(0, Math.min(remote.levelIndex(), levelManager.getLevelCount() - 1));
+            int levelCount = Math.max(1, getMultiplayerLevelCount());
+            multiplayerLevelIndex = Math.max(0, Math.min(remote.levelIndex(), levelCount - 1));
             waitingForLevelSync = false;
             lastAdvertisedLevel = multiplayerLevelIndex;
         }
@@ -525,7 +526,8 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         if (session == null || !multiplayerHost) {
             return;
         }
-        int idx = levelManager.indexOf(getCurrentMultiplayerLevel());
+        int levelCount = Math.max(1, getMultiplayerLevelCount());
+        int idx = Math.max(0, Math.min(multiplayerLevelIndex, levelCount - 1));
         if (idx != lastAdvertisedLevel) {
             session.sendLevelIndex(idx);
             lastAdvertisedLevel = idx;
@@ -534,6 +536,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
     private void beginMultiplayerRun() {
         int idx = Math.max(0, levelManager.indexOf(getCurrentMultiplayerLevel()));
+        int coopIdx = Math.max(0, Math.min(multiplayerLevelIndex, Math.max(1, getMultiplayerLevelCount()) - 1));
         saveData.currentLevelIndex = idx;
         SaveGame.save(saveData);
         loadLevel(idx);
@@ -542,8 +545,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         remoteReady = false;
         waitingForLevelSync = false;
         if (session != null) {
-            session.sendLevelIndex(idx);
+            session.sendLevelIndex(coopIdx);
             session.sendStart();
+            lastAdvertisedLevel = coopIdx;
         }
     }
 
