@@ -36,6 +36,13 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private static final int KILL_PADDING = 500;
     private static final double FRICTION = 0.85;
     private static final double GRAVITY_COOLDOWN = 0.4;
+    private static final Color[][] SUIT_PALETTES = new Color[][]{
+            {new Color(156, 102, 212), new Color(86, 46, 124)},
+            {new Color(120, 214, 172), new Color(86, 160, 138)},
+            {new Color(236, 188, 120), new Color(162, 112, 72)},
+            {new Color(188, 124, 208), new Color(108, 62, 148)},
+            {new Color(214, 104, 116), new Color(152, 48, 76)}
+    };
 
     private final Timer timer;
     private final Player player;
@@ -62,7 +69,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private SaveGame.SaveData saveData;
     private double gravityCooldownRemaining;
 
-    private GameState gameState = GameState.MAIN_MENU;
+    private GameState gameState = GameState.SPLASH;
     private int mainMenuIndex = 0;
     private int pauseMenuIndex = 0;
     private int settingsMenuIndex = 0;
@@ -104,8 +111,23 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private String toastMessage = "";
     private double toastTimer;
     private Color toastColor = new Color(214, 210, 196);
+    private final List<Particle> particles = new ArrayList<>();
+    private double stepTimer;
+    private boolean wasGrounded;
+    private int localPaletteIndex;
+    private int remotePaletteIndex;
+    private boolean localReady;
+    private boolean remoteReady;
+    private boolean sharedRespawnsEnabled;
+    private boolean remoteSharedRespawns = true;
+    private double timeSinceRemote;
+    private int lastAdvertisedLevel = -1;
+    private double splashElapsed;
+    private double splashDuration;
+    private double fakeLoadProgress;
 
     private enum GameState {
+        SPLASH,
         MAIN_MENU,
         MULTIPLAYER_MENU,
         MULTIPLAYER_WAIT,
@@ -120,12 +142,23 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     public GamePanel() {
         settings = Settings.load();
         SoundManager.setMasterVolume(settings.getMasterVolume() / 100.0);
+        sharedRespawnsEnabled = settings.isSharedRespawns();
+        localPaletteIndex = settings.getSuitPalette() % SUIT_PALETTES.length;
+        if (localPaletteIndex < 0) {
+            localPaletteIndex = 0;
+        }
+        remotePaletteIndex = (localPaletteIndex + 1) % SUIT_PALETTES.length;
+        timeSinceRemote = 999;
         scale = settings.getScreenScale();
         directIpInput = settings.getLastDirectIp();
         setPreferredSize(new Dimension((int) (BASE_WIDTH * scale), (int) (BASE_HEIGHT * scale)));
         setBackground(new Color(8, 8, 14));
         setFocusable(true);
         addKeyListener(this);
+
+        splashElapsed = 0;
+        splashDuration = 3.0 + vhsNoise.nextDouble() * 4.0;
+        fakeLoadProgress = 0;
 
         lastSafeGroundedPos = new EnumMap<>(GravityDir.class);
         gravityDir = GravityDir.DOWN;
@@ -182,12 +215,16 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         deathCount = 0;
         localOrbMask = 0;
         remoteOrbMask = 0;
+        particles.clear();
         lastSafeGroundedPos.clear();
         for (GravityDir dir : GravityDir.values()) {
             lastSafeGroundedPos.put(dir, new Point2D.Double(spawn.x, spawn.y));
         }
         gravityCooldownRemaining = 0;
         waitingForLevelSync = false;
+        wasGrounded = player.isGrounded();
+        localReady = false;
+        remoteReady = false;
     }
 
     @Override
@@ -203,8 +240,20 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             fpsFrames = 0;
             fpsTimer = 0;
         }
+        if (multiplayerActive) {
+            timeSinceRemote += dt;
+        } else {
+            timeSinceRemote = Math.min(timeSinceRemote, 999);
+        }
         if (multiplayerActive && gameState == GameState.MULTIPLAYER_WAIT) {
-            pollWaitingLevelSync();
+            pumpMultiplayerLobby();
+        }
+
+        if (gameState == GameState.SPLASH) {
+            updateSplash(dt);
+            updateEffects(dt);
+            repaint();
+            return;
         }
 
         if (gameState == GameState.IN_GAME) {
@@ -218,6 +267,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             if (player.isGrounded()) {
                 lastSafeGroundedPos.put(gravityDir, new Point2D.Double(player.getX(), player.getY()));
             }
+            updateMovementEffects(dt);
             updateCoopButtons();
             collectOrbs(player, true);
             if (multiplayerActive) {
@@ -237,17 +287,16 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         repaint();
     }
 
-    private void pollWaitingLevelSync() {
+    private void pumpMultiplayerLobby() {
         if (session == null) {
             return;
         }
         MultiplayerSession.RemoteState remote = session.pollRemoteState();
-        if (remote.levelIndex() != null) {
-            saveData.currentLevelIndex = remote.levelIndex();
-            SaveGame.save(saveData);
-            loadLevel(remote.levelIndex());
-            waitingForLevelSync = false;
-            gameState = GameState.IN_GAME;
+        applyRemoteState(remote);
+        advertiseLobbyLevel();
+        session.sendState(player.getX(), player.getY(), gravityDir, localOrbMask, localPaletteIndex, localReady, sharedRespawnsEnabled);
+        if (multiplayerHost && localReady && remoteReady && !waitingForLevelSync) {
+            beginMultiplayerRun();
         }
     }
 
@@ -276,7 +325,8 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
         if (jumpPressed && !jumpHeld && player.isGrounded()) {
             player.jump(gravityDir);
-            SoundManager.playTone(880, 120, 0.4);
+            spawnJumpSmoke();
+            SoundManager.playJump();
         }
         jumpHeld = jumpPressed;
     }
@@ -299,6 +349,94 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
     }
 
+    private void updateMovementEffects(double dt) {
+        if (settings.isReducedEffects()) {
+            wasGrounded = player.isGrounded();
+            return;
+        }
+        boolean grounded = player.isGrounded();
+        double tangentialSpeed = gravityDir.isVertical() ? Math.abs(player.getVelX()) : Math.abs(player.getVelY());
+        if (grounded) {
+            if (!wasGrounded) {
+                spawnLandingBurst();
+                SoundManager.playLanding();
+            }
+            if (tangentialSpeed > 1.2) {
+                stepTimer -= dt;
+                if (stepTimer <= 0) {
+                    spawnStepDust();
+                    SoundManager.playStep();
+                    stepTimer = 0.22;
+                }
+            } else {
+                stepTimer = 0.1;
+            }
+        }
+        wasGrounded = grounded;
+    }
+
+    private void spawnStepDust() {
+        Point2D.Double normal = getGravityNormal(gravityDir);
+        Point2D.Double tangent = getGravityTangent(gravityDir);
+        double baseX = player.getX() + player.getWidth() / 2.0 + normal.x * player.getHeight() / 2.0;
+        double baseY = player.getY() + player.getHeight() / 2.0 + normal.y * player.getHeight() / 2.0;
+        for (int i = 0; i < 4; i++) {
+            double spread = (vhsNoise.nextDouble() * 2 - 1) * (gravityDir.isVertical() ? player.getWidth() : player.getHeight()) / 2.5;
+            double px = baseX + tangent.x * spread;
+            double py = baseY + tangent.y * spread;
+            double vx = -normal.x * (20 + vhsNoise.nextDouble() * 30) + tangent.x * (vhsNoise.nextDouble() * 30 - 15);
+            double vy = -normal.y * (20 + vhsNoise.nextDouble() * 30) + tangent.y * (vhsNoise.nextDouble() * 30 - 15);
+            addParticle(px, py, vx, vy, 0.35 + vhsNoise.nextDouble() * 0.15, 8 + vhsNoise.nextDouble() * 4, new Color(186, 178, 172, 180));
+        }
+    }
+
+    private void spawnLandingBurst() {
+        Point2D.Double normal = getGravityNormal(gravityDir);
+        Point2D.Double tangent = getGravityTangent(gravityDir);
+        double baseX = player.getX() + player.getWidth() / 2.0 + normal.x * player.getHeight() / 2.0;
+        double baseY = player.getY() + player.getHeight() / 2.0 + normal.y * player.getHeight() / 2.0;
+        for (int i = 0; i < 12; i++) {
+            double spread = (vhsNoise.nextDouble() * 2 - 1) * (gravityDir.isVertical() ? player.getWidth() : player.getHeight()) / 2.0;
+            double px = baseX + tangent.x * spread;
+            double py = baseY + tangent.y * spread;
+            double speed = 60 + vhsNoise.nextDouble() * 80;
+            double vx = -normal.x * speed + tangent.x * (vhsNoise.nextDouble() * 80 - 40);
+            double vy = -normal.y * speed + tangent.y * (vhsNoise.nextDouble() * 80 - 40);
+            addParticle(px, py, vx, vy, 0.5 + vhsNoise.nextDouble() * 0.2, 10 + vhsNoise.nextDouble() * 6, new Color(204, 192, 180, 200));
+        }
+    }
+
+    private void spawnJumpSmoke() {
+        if (settings.isReducedEffects()) {
+            return;
+        }
+        Point2D.Double normal = getGravityNormal(gravityDir);
+        double baseX = player.getX() + player.getWidth() / 2.0 + normal.x * player.getHeight() / 2.0;
+        double baseY = player.getY() + player.getHeight() / 2.0 + normal.y * player.getHeight() / 2.0;
+        for (int i = 0; i < 8; i++) {
+            double angle = (vhsNoise.nextDouble() * 0.6 - 0.3);
+            double vx = -normal.x * (80 + vhsNoise.nextDouble() * 60) + Math.cos(angle) * 10;
+            double vy = -normal.y * (80 + vhsNoise.nextDouble() * 60) + Math.sin(angle) * 10;
+            addParticle(baseX, baseY, vx, vy, 0.45 + vhsNoise.nextDouble() * 0.2, 14 + vhsNoise.nextDouble() * 6, new Color(172, 162, 162, 180));
+        }
+    }
+
+    private void spawnDeathBurst() {
+        if (settings.isReducedEffects()) {
+            return;
+        }
+        double baseX = player.getX() + player.getWidth() / 2.0;
+        double baseY = player.getY() + player.getHeight() / 2.0;
+        for (int i = 0; i < 36; i++) {
+            double angle = vhsNoise.nextDouble() * Math.PI * 2;
+            double speed = 90 + vhsNoise.nextDouble() * 180;
+            double vx = Math.cos(angle) * speed;
+            double vy = Math.sin(angle) * speed;
+            Color color = (i % 3 == 0) ? new Color(230, 98, 72, 220) : new Color(210, 162, 248, 200);
+            addParticle(baseX, baseY, vx, vy, 0.8 + vhsNoise.nextDouble() * 0.3, 12 + vhsNoise.nextDouble() * 10, color);
+        }
+    }
+
     private void collectOrbs(Player target, boolean localPlayer) {
         if (target == null) {
             return;
@@ -309,7 +447,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             if (orb.checkCollected(target) && !alreadyCollected) {
                 if (localPlayer) {
                     localOrbMask |= (1L << i);
-                    SoundManager.playTone(1320, 160, 0.55);
+                    SoundManager.playOrb();
                     setToast("Flux orb secured!", new Color(154, 248, 196));
                     screenShakeTimer = 0.3;
                     screenShakeStrength = 3.5;
@@ -341,25 +479,87 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private void syncMultiplayer() {
+        if (session == null) {
+            return;
+        }
         MultiplayerSession.RemoteState remote = session.pollRemoteState();
+        applyRemoteState(remote);
+        session.sendState(player.getX(), player.getY(), gravityDir, localOrbMask, localPaletteIndex, false, sharedRespawnsEnabled);
+    }
+
+    private void applyRemoteState(MultiplayerSession.RemoteState remote) {
+        if (remote == null) {
+            return;
+        }
+        timeSinceRemote = 0;
         if (remote.levelIndex() != null) {
-            saveData.currentLevelIndex = remote.levelIndex();
-            SaveGame.save(saveData);
-            loadLevel(remote.levelIndex());
-            multiplayerActive = true;
+            multiplayerLevelIndex = Math.max(0, Math.min(remote.levelIndex(), levelManager.getLevelCount() - 1));
             waitingForLevelSync = false;
-            gameState = GameState.IN_GAME;
+            lastAdvertisedLevel = multiplayerLevelIndex;
+        }
+        if (remote.paletteIndex() != null) {
+            remotePaletteIndex = clampPaletteIndex(remote.paletteIndex());
+        }
+        if (remote.ready() != null) {
+            remoteReady = remote.ready();
+        }
+        if (remote.sharedRespawns() != null) {
+            remoteSharedRespawns = remote.sharedRespawns();
+        }
+        if (remote.orbMask() != null) {
+            remoteOrbMask = remote.orbMask();
         }
         if (remote.x() != null && remote.y() != null && remote.gravity() != null) {
             partner.setPosition(remote.x(), remote.y());
             partnerGravity = remote.gravity();
-            if (remote.orbMask() != null) {
-                remoteOrbMask = remote.orbMask();
-            }
         }
+        if (remote.respawnSignal() && multiplayerActive && sharedRespawnsEnabled && remoteSharedRespawns) {
+            respawn(true);
+        }
+        if (remote.startSignal()) {
+            startMultiplayerFromRemote();
+        }
+    }
+
+    private void advertiseLobbyLevel() {
+        if (session == null || !multiplayerHost) {
+            return;
+        }
+        int idx = levelManager.indexOf(getCurrentMultiplayerLevel());
+        if (idx != lastAdvertisedLevel) {
+            session.sendLevelIndex(idx);
+            lastAdvertisedLevel = idx;
+        }
+    }
+
+    private void beginMultiplayerRun() {
+        int idx = Math.max(0, levelManager.indexOf(getCurrentMultiplayerLevel()));
+        saveData.currentLevelIndex = idx;
+        SaveGame.save(saveData);
+        loadLevel(idx);
+        gameState = GameState.IN_GAME;
+        localReady = false;
+        remoteReady = false;
+        waitingForLevelSync = false;
         if (session != null) {
-            session.sendState(player.getX(), player.getY(), gravityDir, localOrbMask);
+            session.sendLevelIndex(idx);
+            session.sendStart();
         }
+    }
+
+    private void startMultiplayerFromRemote() {
+        if (gameState == GameState.IN_GAME) {
+            return;
+        }
+        int idx = Math.max(0, levelManager.indexOf(getCurrentMultiplayerLevel()));
+        saveData.currentLevelIndex = idx;
+        SaveGame.save(saveData);
+        loadLevel(idx);
+        gameState = GameState.IN_GAME;
+        localReady = false;
+        remoteReady = false;
+        waitingForLevelSync = false;
+        multiplayerActive = true;
     }
 
     private void handleCheckpoints() {
@@ -373,6 +573,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private void respawn() {
+        respawn(false);
+    }
+
+    private void respawn(boolean fromRemote) {
         deathCount++;
         player.setPosition(respawnPosition.x, respawnPosition.y);
         player.resetVelocity();
@@ -380,7 +584,11 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         deathEffectTimer = 1.0;
         screenShakeTimer = 0.6;
         screenShakeStrength = 8.0;
-        SoundManager.playNoise(220, 0.8);
+        spawnDeathBurst();
+        SoundManager.playDeath();
+        if (multiplayerActive && sharedRespawnsEnabled && remoteSharedRespawns && session != null && !fromRemote) {
+            session.sendRespawnSignal();
+        }
     }
 
     private void updateMovingPlatforms(double dt) {
@@ -402,6 +610,19 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         return platformScratch;
     }
 
+    private void updateSplash(double dt) {
+        splashElapsed += dt;
+        double target = Math.min(1.0, splashElapsed / splashDuration);
+        double wobble = (vhsNoise.nextDouble() - 0.5) * 0.08;
+        double easing = Math.min(1.0, dt * 4.0);
+        fakeLoadProgress += (target - fakeLoadProgress) * easing;
+        fakeLoadProgress = Math.max(0, Math.min(1.0, fakeLoadProgress + wobble * dt));
+        if (splashElapsed >= splashDuration) {
+            fakeLoadProgress = 1.0;
+            gameState = GameState.MAIN_MENU;
+        }
+    }
+
     private void updateGravityCooldown(double dt) {
         if (gravityCooldownRemaining > 0) {
             gravityCooldownRemaining = Math.max(0, gravityCooldownRemaining - dt);
@@ -421,6 +642,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 toastMessage = "";
             }
         }
+        updateParticles(dt);
     }
 
     private void setToast(String message, Color color) {
@@ -541,6 +763,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private void renderScene(Graphics2D g2d) {
         drawBackground(g2d);
         switch (gameState) {
+            case SPLASH:
+                drawSplash(g2d);
+                break;
             case MAIN_MENU:
                 drawMainMenu(g2d);
                 break;
@@ -747,6 +972,56 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.setTransform(oldTransform);
     }
 
+    private void drawSplash(Graphics2D g2d) {
+        g2d.setColor(new Color(12, 8, 16, 210));
+        g2d.fillRoundRect(40, 60, BASE_WIDTH - 80, BASE_HEIGHT - 120, 24, 24);
+        g2d.setColor(new Color(122, 82, 170, 120));
+        g2d.setStroke(new BasicStroke(3f));
+        g2d.drawRoundRect(40, 60, BASE_WIDTH - 80, BASE_HEIGHT - 120, 24, 24);
+
+        g2d.setFont(new Font("Consolas", Font.BOLD, 32));
+        g2d.setColor(new Color(214, 210, 196));
+        String studio = "TheRealBasic Studios";
+        int studioWidth = g2d.getFontMetrics().stringWidth(studio);
+        g2d.drawString(studio, (BASE_WIDTH - studioWidth) / 2, 170);
+
+        g2d.setFont(new Font("Consolas", Font.BOLD, 48));
+        g2d.setColor(new Color(198, 112, 230));
+        String gameName = "Gravity Warp Trials";
+        int nameWidth = g2d.getFontMetrics().stringWidth(gameName);
+        g2d.drawString(gameName, (BASE_WIDTH - nameWidth) / 2, 240);
+
+        g2d.setFont(new Font("Consolas", Font.PLAIN, 20));
+        g2d.setColor(new Color(206, 198, 188));
+        String loadingText = "Loading systems...";
+        int loadWidth = g2d.getFontMetrics().stringWidth(loadingText);
+        g2d.drawString(loadingText, (BASE_WIDTH - loadWidth) / 2, 310);
+
+        int barWidth = 520;
+        int barHeight = 20;
+        int barX = (BASE_WIDTH - barWidth) / 2;
+        int barY = 330;
+        g2d.setColor(new Color(40, 26, 56));
+        g2d.fillRoundRect(barX, barY, barWidth, barHeight, 10, 10);
+        g2d.setColor(new Color(154, 118, 176));
+        g2d.drawRoundRect(barX, barY, barWidth, barHeight, 10, 10);
+
+        int fill = (int) (barWidth * fakeLoadProgress);
+        GradientPaint fillPaint = new GradientPaint(barX, barY, new Color(178, 118, 232), barX + fill, barY + barHeight, new Color(112, 182, 214));
+        g2d.setPaint(fillPaint);
+        g2d.fillRoundRect(barX, barY, fill, barHeight, 10, 10);
+
+        g2d.setColor(new Color(214, 206, 192));
+        String percent = String.format("%d%%", (int) Math.round(fakeLoadProgress * 100));
+        int pctWidth = g2d.getFontMetrics().stringWidth(percent);
+        g2d.drawString(percent, (BASE_WIDTH - pctWidth) / 2, barY + barHeight + 26);
+
+        g2d.setColor(new Color(186, 150, 118));
+        String tip = "Press Enter to skip";
+        int tipWidth = g2d.getFontMetrics().stringWidth(tip);
+        g2d.drawString(tip, (BASE_WIDTH - tipWidth) / 2, barY + barHeight + 54);
+    }
+
     private void drawCrtBezel(Graphics2D g2d) {
         int outerPadding = 18;
         int frameRadius = 30;
@@ -874,7 +1149,14 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
         g2d.setColor(new Color(162, 202, 186));
         g2d.drawString("Target IP: " + directIpInput, (BASE_WIDTH - 360) / 2, startY + options.length * 32 + 12);
-        drawControlHint(g2d, "Use numbers and dot to edit IP, Enter to select");
+        LevelData preview = getCurrentMultiplayerLevel();
+        String levelLine = "Co-op Level: " + preview.getName() + " (\u2190/\u2192 to change)";
+        g2d.drawString(levelLine, (BASE_WIDTH - 360) / 2, startY + options.length * 32 + 40);
+        g2d.drawString("Palette: #" + (clampPaletteIndex(localPaletteIndex) + 1) + " (C to cycle)", (BASE_WIDTH - 360) / 2, startY + options.length * 32 + 64);
+        g2d.drawString("Shared Respawns: " + (sharedRespawnsEnabled ? "On" : "Off") + " (V to toggle)", (BASE_WIDTH - 360) / 2, startY + options.length * 32 + 88);
+        g2d.setColor(new Color(214, 186, 218));
+        g2d.drawString("Briefing: Coordinate jumps and flux grabs together.", (BASE_WIDTH - 520) / 2, startY + options.length * 32 + 116);
+        drawControlHint(g2d, "Use numbers/dot for IP, arrows to navigate, Enter to select");
     }
 
     private void drawMultiplayerWait(Graphics2D g2d) {
@@ -883,7 +1165,15 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         String status = multiplayerHost ? "Hosting on port 9484..." : "Connecting to " + directIpInput + "...";
         int width = g2d.getFontMetrics().stringWidth(status);
         g2d.drawString(status, (BASE_WIDTH - width) / 2, 240);
-        drawControlHint(g2d, "Esc to cancel");
+        LevelData preview = getCurrentMultiplayerLevel();
+        g2d.setColor(new Color(162, 202, 186));
+        g2d.drawString("Level: " + preview.getName(), (BASE_WIDTH - 360) / 2, 270);
+        String readiness = "Ready: You=" + (localReady ? "Ready" : "Not ready") + " • Partner=" + (remoteReady ? "Ready" : "Waiting");
+        g2d.drawString(readiness, (BASE_WIDTH - 360) / 2, 294);
+        g2d.drawString("Suit: Yours=#" + (clampPaletteIndex(localPaletteIndex) + 1) + " • Partner=#" + (clampPaletteIndex(remotePaletteIndex) + 1), (BASE_WIDTH - 360) / 2, 318);
+        g2d.drawString("Shared Respawn: " + (sharedRespawnsEnabled && remoteSharedRespawns ? "Enabled" : "Disabled"), (BASE_WIDTH - 360) / 2, 342);
+        g2d.drawString("Link: " + describeLink(), (BASE_WIDTH - 360) / 2, 366);
+        drawControlHint(g2d, "Enter toggles ready • C palette • V shared respawn • Esc to cancel");
     }
 
     private void drawSettingsMenu(Graphics2D g2d) {
@@ -968,9 +1258,100 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 door.draw(g2d);
             }
         }
-        player.draw(g2d, gravityDir);
+        drawParticles(g2d);
+        Color[] localPalette = getPalette(localPaletteIndex);
+        player.draw(g2d, gravityDir, localPalette[0], localPalette[1]);
         if (multiplayerActive) {
-            partner.draw(g2d, partnerGravity, new Color(120, 214, 172), new Color(86, 160, 138));
+            Color[] partnerPalette = getPalette(remotePaletteIndex);
+            partner.draw(g2d, partnerGravity, partnerPalette[0], partnerPalette[1]);
+        }
+    }
+
+    private Color[] getPalette(int index) {
+        int clamped = clampPaletteIndex(index);
+        return SUIT_PALETTES[clamped];
+    }
+
+    private int clampPaletteIndex(int index) {
+        if (SUIT_PALETTES.length == 0) {
+            return 0;
+        }
+        int result = index % SUIT_PALETTES.length;
+        if (result < 0) {
+            result += SUIT_PALETTES.length;
+        }
+        return result;
+    }
+
+    private void updateParticles(double dt) {
+        if (particles.isEmpty()) {
+            return;
+        }
+        for (int i = particles.size() - 1; i >= 0; i--) {
+            Particle p = particles.get(i);
+            p.life += dt;
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            p.vx *= 0.96;
+            p.vy *= 0.96;
+            if (p.life >= p.maxLife) {
+                particles.remove(i);
+            }
+        }
+    }
+
+    private void drawParticles(Graphics2D g2d) {
+        for (Particle p : particles) {
+            double alphaT = 1.0 - (p.life / p.maxLife);
+            int alpha = (int) (p.color.getAlpha() * alphaT);
+            if (alpha <= 0) {
+                continue;
+            }
+            Color faded = new Color(p.color.getRed(), p.color.getGreen(), p.color.getBlue(), alpha);
+            g2d.setColor(faded);
+            double size = p.size * (0.8 + 0.4 * alphaT);
+            g2d.fillOval((int) (p.x - size / 2), (int) (p.y - size / 2), (int) size, (int) size);
+        }
+    }
+
+    private void addParticle(double x, double y, double vx, double vy, double life, double size, Color color) {
+        particles.add(new Particle(x, y, vx, vy, life, size, color));
+    }
+
+    private Point2D.Double getGravityNormal(GravityDir dir) {
+        return switch (dir) {
+            case DOWN -> new Point2D.Double(0, 1);
+            case UP -> new Point2D.Double(0, -1);
+            case LEFT -> new Point2D.Double(-1, 0);
+            case RIGHT -> new Point2D.Double(1, 0);
+        };
+    }
+
+    private Point2D.Double getGravityTangent(GravityDir dir) {
+        return switch (dir) {
+            case DOWN, UP -> new Point2D.Double(1, 0);
+            case LEFT, RIGHT -> new Point2D.Double(0, 1);
+        };
+    }
+
+    private static final class Particle {
+        double x;
+        double y;
+        double vx;
+        double vy;
+        double life;
+        final double maxLife;
+        final double size;
+        final Color color;
+
+        Particle(double x, double y, double vx, double vy, double maxLife, double size, Color color) {
+            this.x = x;
+            this.y = y;
+            this.vx = vx;
+            this.vy = vy;
+            this.maxLife = maxLife;
+            this.size = size;
+            this.color = color;
         }
     }
 
@@ -1007,7 +1388,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
         Color panelBg = new Color(10, 8, 18, 210);
         Color panelAccent = new Color(126, 66, 156, 180);
-        int panelHeight = 240;
+        int panelHeight = 300;
         g2d.setColor(panelBg);
         g2d.fillRoundRect(12, 12, 270, panelHeight, 18, 18);
         g2d.setColor(new Color(18, 12, 30, 170));
@@ -1030,15 +1411,21 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.drawString("Par: " + String.format("%.1fs", objectiveManager.getParTimeSeconds()), 28, 154);
         g2d.drawString("Deaths: " + deathCount, 28, 176);
 
+        if (multiplayerActive) {
+            g2d.drawString("Link: " + describeLink(), 28, 198);
+            String sharedLabel = "Shared Respawn: " + (sharedRespawnsEnabled && remoteSharedRespawns ? "On" : sharedRespawnsEnabled ? "Partner off" : "Off");
+            g2d.drawString(sharedLabel, 28, 218);
+        }
+
         double orbProgress = orbs.isEmpty() ? 1.0 : collected / (double) orbs.size();
-        drawProgressBar(g2d, 28, 190, 210, 14, orbProgress, new Color(104, 214, 178), "Gate unlock");
+        drawProgressBar(g2d, 28, 236, 210, 14, orbProgress, new Color(104, 214, 178), "Gate unlock");
 
         double par = objectiveManager.getParTimeSeconds();
         if (par > 0) {
             double elapsed = objectiveManager.getElapsedTime();
             double parProgress = Math.min(1.0, elapsed / par);
             Color parColor = elapsed <= par ? new Color(182, 210, 110) : new Color(196, 86, 102);
-            drawProgressBar(g2d, 28, 214, 210, 14, parProgress, parColor, "Par pace");
+            drawProgressBar(g2d, 28, 260, 210, 14, parProgress, parColor, "Par pace");
         }
 
         int cooldownX = BASE_WIDTH - 230;
@@ -1106,6 +1493,22 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
 
         drawGravityCompass(g2d);
+    }
+
+    private String describeLink() {
+        if (!multiplayerActive || session == null) {
+            return "Idle";
+        }
+        if (timeSinceRemote < 0.8) {
+            return "Good";
+        }
+        if (timeSinceRemote < 2.0) {
+            return "Okay";
+        }
+        if (timeSinceRemote < 4.0) {
+            return "Stalling";
+        }
+        return "Lost";
     }
 
     private void drawProgressBar(Graphics2D g2d, int x, int y, int width, int height, double progress, Color fill, String label) {
@@ -1233,15 +1636,60 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             return;
         }
 
+        if (gameState == GameState.SPLASH) {
+            if (e.getKeyCode() == KeyEvent.VK_ENTER || e.getKeyCode() == KeyEvent.VK_SPACE || e.getKeyCode() == KeyEvent.VK_ESCAPE) {
+                splashElapsed = splashDuration;
+                fakeLoadProgress = 1.0;
+                gameState = GameState.MAIN_MENU;
+            }
+            return;
+        }
+
         if (gameState == GameState.MAIN_MENU) {
             handleMenuNavigation(e, 7, () -> handleMainMenuSelect(mainMenuIndex));
             return;
         }
         if (gameState == GameState.MULTIPLAYER_MENU) {
+            if (e.getKeyCode() == KeyEvent.VK_LEFT) {
+                cycleMultiplayerLevel(-1);
+                return;
+            }
+            if (e.getKeyCode() == KeyEvent.VK_RIGHT) {
+                cycleMultiplayerLevel(1);
+                return;
+            }
+            if (e.getKeyCode() == KeyEvent.VK_C) {
+                cyclePalette(1);
+                return;
+            }
+            if (e.getKeyCode() == KeyEvent.VK_V) {
+                toggleSharedRespawn();
+                return;
+            }
             handleMenuNavigation(e, 4, () -> handleMultiplayerSelect(multiplayerMenuIndex));
             return;
         }
         if (gameState == GameState.MULTIPLAYER_WAIT) {
+            if (e.getKeyCode() == KeyEvent.VK_LEFT) {
+                cycleMultiplayerLevel(-1);
+                return;
+            }
+            if (e.getKeyCode() == KeyEvent.VK_RIGHT) {
+                cycleMultiplayerLevel(1);
+                return;
+            }
+            if (e.getKeyCode() == KeyEvent.VK_C) {
+                cyclePalette(1);
+                return;
+            }
+            if (e.getKeyCode() == KeyEvent.VK_V) {
+                toggleSharedRespawn();
+                return;
+            }
+            if (e.getKeyCode() == KeyEvent.VK_ENTER) {
+                toggleReady();
+                return;
+            }
             if (e.getKeyCode() == KeyEvent.VK_ESCAPE) {
                 closeSession();
                 gameState = GameState.MULTIPLAYER_MENU;
@@ -1325,6 +1773,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private void handleMenuNavigation(KeyEvent e, int itemCount, Runnable onEnter) {
+        if (itemCount <= 0) {
+            return;
+        }
         if (e.getKeyCode() == KeyEvent.VK_W || e.getKeyCode() == KeyEvent.VK_UP) {
             switch (gameState) {
                 case MAIN_MENU:
@@ -1460,25 +1911,54 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         return coop.get(multiplayerLevelIndex);
     }
 
+    private int getMultiplayerLevelCount() {
+        List<LevelData> coop = levelManager.getMultiplayerLevels();
+        return coop.isEmpty() ? levelManager.getLevelCount() : coop.size();
+    }
+
+    private void cycleMultiplayerLevel(int delta) {
+        int count = getMultiplayerLevelCount();
+        if (count <= 0) {
+            return;
+        }
+        multiplayerLevelIndex = (multiplayerLevelIndex + delta + count) % count;
+        lastAdvertisedLevel = -1;
+    }
+
+    private void cyclePalette(int delta) {
+        localPaletteIndex = clampPaletteIndex(localPaletteIndex + delta);
+        settings.setSuitPalette(localPaletteIndex);
+        settings.save();
+    }
+
+    private void toggleSharedRespawn() {
+        sharedRespawnsEnabled = !sharedRespawnsEnabled;
+        settings.setSharedRespawns(sharedRespawnsEnabled);
+        settings.save();
+    }
+
+    private void toggleReady() {
+        localReady = !localReady;
+    }
+
     private void startHostingSession() {
         closeSession();
         multiplayerHost = true;
         multiplayerActive = true;
+        localReady = false;
+        remoteReady = false;
+        waitingForLevelSync = false;
+        lastAdvertisedLevel = -1;
         gameState = GameState.MULTIPLAYER_WAIT;
         new Thread(() -> {
             try {
                 MultiplayerSession.advertiseLanHost();
                 session = MultiplayerSession.host();
-                LevelData level = getCurrentMultiplayerLevel();
-                int idx = levelManager.indexOf(level);
-                saveData.currentLevelIndex = idx;
-                SaveGame.save(saveData);
-                session.sendLevelIndex(idx);
-                loadLevel(idx);
-                gameState = GameState.IN_GAME;
+                lastAdvertisedLevel = -1;
             } catch (IOException ex) {
                 System.err.println("Multiplayer host failed: " + ex.getMessage());
                 gameState = GameState.MULTIPLAYER_MENU;
+                multiplayerActive = false;
             }
         }).start();
     }
@@ -1488,6 +1968,8 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         multiplayerHost = false;
         multiplayerActive = true;
         waitingForLevelSync = true;
+        localReady = false;
+        remoteReady = false;
         gameState = GameState.MULTIPLAYER_WAIT;
         new Thread(() -> {
             try {
@@ -1495,6 +1977,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             } catch (IOException ex) {
                 System.err.println("Multiplayer join failed: " + ex.getMessage());
                 gameState = GameState.MULTIPLAYER_MENU;
+                multiplayerActive = false;
             }
         }).start();
     }
@@ -1505,6 +1988,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             session = null;
         }
         multiplayerActive = false;
+        localReady = false;
+        remoteReady = false;
+        lastAdvertisedLevel = -1;
     }
 
     private void handleMultiplayerSelect(int index) {
