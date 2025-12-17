@@ -43,6 +43,18 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             {new Color(188, 124, 208), new Color(108, 62, 148)},
             {new Color(214, 104, 116), new Color(152, 48, 76)}
     };
+    private static final String[] SOLO_BROADCASTS = new String[]{
+            "Command uplink: You’re not alone out there.",
+            "Telemetry: Solo routing stable. Keep exploring.",
+            "Archivist: These halls miss conversation. Leave them none.",
+            "Field note: Gravity isn’t a cage, it’s a canvas.",
+            "Logistics: Supplies en route if you keep moving.",
+            "Echo: The station hums when you sprint; it likes the energy.",
+            "Nav: Exit gate beacon is listening for your footsteps.",
+            "Wellness: Breathe in on climbs, breathe out on flips.",
+            "Reminder: Par time is just one story you can tell.",
+            "Comms: Solo channel open. Talk to yourself kindly."
+    };
 
     private final Timer timer;
     private final Player player;
@@ -125,6 +137,15 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private double splashElapsed;
     private double splashDuration;
     private double fakeLoadProgress;
+    private SoloCompanion companion;
+    private double radioTimer;
+    private int radioIndex;
+    private int orbStreak;
+    private boolean deathlessRun;
+    private double idleTimer;
+    private double companionChatCooldown;
+    private String lastHintMessage = "";
+    private boolean gateUnlockAnnounced;
 
     private enum GameState {
         SPLASH,
@@ -159,6 +180,13 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         splashElapsed = 0;
         splashDuration = 3.0 + vhsNoise.nextDouble() * 4.0;
         fakeLoadProgress = 0;
+        companion = new SoloCompanion();
+        radioTimer = 0;
+        radioIndex = 0;
+        orbStreak = 0;
+        deathlessRun = true;
+        idleTimer = 0;
+        companionChatCooldown = 0;
 
         lastSafeGroundedPos = new EnumMap<>(GravityDir.class);
         gravityDir = GravityDir.DOWN;
@@ -215,6 +243,15 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         deathCount = 0;
         localOrbMask = 0;
         remoteOrbMask = 0;
+        orbStreak = 0;
+        deathlessRun = true;
+        idleTimer = 0;
+        companionChatCooldown = 0;
+        lastHintMessage = "";
+        gateUnlockAnnounced = false;
+        if (companion != null) {
+            companion.snapTo(spawn.x - 26, spawn.y - 32);
+        }
         particles.clear();
         lastSafeGroundedPos.clear();
         for (GravityDir dir : GravityDir.values()) {
@@ -277,6 +314,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             handleCheckpoints();
             handleHazards();
             objectiveManager.update(dt, player);
+            if (!multiplayerActive) {
+                updateSoloCompany(dt);
+            }
             if (exitGate.checkCollision(player)) {
                 onLevelComplete();
             }
@@ -444,19 +484,28 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         for (int i = 0; i < orbs.size(); i++) {
             FluxOrb orb = orbs.get(i);
             boolean alreadyCollected = ((localOrbMask | remoteOrbMask) & (1L << i)) != 0;
-            if (orb.checkCollected(target) && !alreadyCollected) {
+            boolean newlyCollected = orb.checkCollected(target) && !alreadyCollected;
+            if (newlyCollected) {
                 if (localPlayer) {
                     localOrbMask |= (1L << i);
                     SoundManager.playOrb();
                     setToast("Flux orb secured!", new Color(154, 248, 196));
                     screenShakeTimer = 0.3;
                     screenShakeStrength = 3.5;
+                    orbStreak++;
+                    if (!multiplayerActive) {
+                        setCompanionToast("Streak x" + orbStreak + " – keep it up!", new Color(140, 222, 206));
+                    }
                 } else {
                     remoteOrbMask |= (1L << i);
                 }
             }
             boolean collected = ((localOrbMask | remoteOrbMask) & (1L << i)) != 0;
             orb.setCollected(collected);
+        }
+        if (!multiplayerActive && objectiveManager != null && objectiveManager.allOrbsCollected() && !gateUnlockAnnounced) {
+            gateUnlockAnnounced = true;
+            setCompanionToast("Gate unlocked – you’ve got this!", new Color(186, 214, 120));
         }
     }
 
@@ -582,6 +631,15 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
     private void respawn(boolean fromRemote) {
         deathCount++;
+        orbStreak = 0;
+        idleTimer = 0;
+        if (!multiplayerActive) {
+            if (deathlessRun) {
+                setCompanionToast("Deathless run interrupted", new Color(236, 158, 142));
+            }
+            deathlessRun = false;
+            maybeShowSoloHint();
+        }
         player.setPosition(respawnPosition.x, respawnPosition.y);
         player.resetVelocity();
         gravityDir = respawnGravity;
@@ -646,6 +704,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 toastMessage = "";
             }
         }
+        if (companionChatCooldown > 0) {
+            companionChatCooldown = Math.max(0, companionChatCooldown - dt);
+        }
         updateParticles(dt);
     }
 
@@ -653,6 +714,37 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         toastMessage = message;
         toastColor = color;
         toastTimer = 2.2;
+    }
+
+    private void setCompanionToast(String message, Color color) {
+        if (multiplayerActive) {
+            return;
+        }
+        if (companionChatCooldown > 0 && !toastMessage.isEmpty()) {
+            return;
+        }
+        setToast(message, color);
+        companionChatCooldown = 2.4;
+    }
+
+    private void maybeShowSoloHint() {
+        if (multiplayerActive) {
+            return;
+        }
+        String hint;
+        if (deathCount == 3) {
+            hint = "Try resting on a wall before flipping gravity.";
+        } else if (deathCount == 5) {
+            hint = "Remember: orbs unlock the gate; scout their glow.";
+        } else if (deathCount > 0 && deathCount % 7 == 0) {
+            hint = "Hold jump a beat longer for extra lift.";
+        } else {
+            return;
+        }
+        if (!hint.equals(lastHintMessage)) {
+            lastHintMessage = hint;
+            setCompanionToast(hint, new Color(214, 186, 132));
+        }
     }
 
     private boolean collidesWithPlatform(double px, double py) {
@@ -664,6 +756,48 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             }
         }
         return false;
+    }
+
+    private void updateSoloCompany(double dt) {
+        if (companion == null) {
+            companion = new SoloCompanion();
+        }
+        double targetX = player.getX() - 26;
+        double targetY = player.getY() - 32;
+        companion.update(dt, targetX, targetY);
+
+        radioTimer += dt;
+        if (radioTimer >= 11.0) {
+            radioTimer = 0;
+            radioIndex = (radioIndex + 1) % getSoloBroadcasts().length;
+        }
+
+        double speed = Math.abs(player.getVelX()) + Math.abs(player.getVelY());
+        if (speed < 6 && player.isGrounded()) {
+            idleTimer += dt;
+            if (idleTimer > 4.5 && vhsNoise.nextDouble() < dt * 1.5) {
+                addParticle(player.getX() + player.getWidth() / 2.0, player.getY() + player.getHeight() / 2.0,
+                        (vhsNoise.nextDouble() - 0.5) * 30,
+                        (vhsNoise.nextDouble() - 0.5) * 24,
+                        0.6 + vhsNoise.nextDouble() * 0.4,
+                        7 + vhsNoise.nextDouble() * 5,
+                        new Color(162, 188, 210, 120));
+            }
+        } else {
+            idleTimer = 0;
+        }
+
+        if (objectiveManager != null && objectiveManager.getParTimeSeconds() > 0) {
+            double delta = objectiveManager.getParTimeSeconds() - objectiveManager.getElapsedTime();
+            if (delta <= 3 && companionChatCooldown <= 0 && toastMessage.isEmpty()) {
+                setCompanionToast(delta >= 0 ? "Ahead of par by " + String.format("%.1fs", delta) : "Par slipping by " + String.format("%.1fs", -delta),
+                        delta >= 0 ? new Color(146, 218, 170) : new Color(224, 158, 132));
+            }
+        }
+    }
+
+    private String[] getSoloBroadcasts() {
+        return SOLO_BROADCASTS;
     }
 
     private void changeGravity(GravityDir newDir) {
@@ -696,15 +830,20 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         double elapsed = objectiveManager.getElapsedTime();
         lastCompletedIndex = saveData.currentLevelIndex;
         double best = saveData.bestTimes[lastCompletedIndex];
+        boolean newBestTime = best == 0 || elapsed < best;
         if (best == 0 || elapsed < best) {
             saveData.bestTimes[lastCompletedIndex] = elapsed;
         }
         String medal = determineMedal(elapsed, objectiveManager.getParTimeSeconds());
         saveData.bestMedals[lastCompletedIndex] = medal;
+        int previousBestDeaths = saveData.bestDeaths[lastCompletedIndex];
         saveData.bestDeaths[lastCompletedIndex] = (saveData.bestDeaths[lastCompletedIndex] == 0) ? deathCount : Math.min(saveData.bestDeaths[lastCompletedIndex], deathCount);
         if (lastCompletedIndex + 1 < levelManager.getLevelCount()) {
             saveData.unlockedLevels = Math.max(saveData.unlockedLevels, lastCompletedIndex + 2);
             saveData.currentLevelIndex = lastCompletedIndex + 1;
+        }
+        if (!multiplayerActive && (newBestTime || (previousBestDeaths == 0 || deathCount < previousBestDeaths))) {
+            setCompanionToast("New personal best logged!", new Color(178, 236, 196));
         }
         SaveGame.save(saveData);
         gameState = GameState.LEVEL_COMPLETE;
@@ -1252,6 +1391,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         for (FluxOrb orb : orbs) {
             orb.draw(g2d);
         }
+        if (!multiplayerActive) {
+            drawRespawnBeacon(g2d);
+        }
         if (buttons != null) {
             for (CoopButton button : buttons) {
                 button.draw(g2d);
@@ -1268,6 +1410,8 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         if (multiplayerActive) {
             Color[] partnerPalette = getPalette(remotePaletteIndex);
             partner.draw(g2d, partnerGravity, partnerPalette[0], partnerPalette[1]);
+        } else if (companion != null) {
+            companion.draw(g2d);
         }
     }
 
@@ -1359,6 +1503,39 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
     }
 
+    private static final class SoloCompanion {
+        private double x;
+        private double y;
+        private double bob;
+
+        void update(double dt, double targetX, double targetY) {
+            bob += dt;
+            double lerp = 1 - Math.pow(0.02, dt * 60);
+            x += (targetX - x) * lerp;
+            y += (targetY - y) * lerp;
+        }
+
+        void snapTo(double targetX, double targetY) {
+            x = targetX;
+            y = targetY;
+        }
+
+        void draw(Graphics2D g2d) {
+            double offset = Math.sin(bob * 2.6) * 4;
+            int drawX = (int) x;
+            int drawY = (int) (y + offset);
+            g2d.setColor(new Color(90, 212, 198, 90));
+            g2d.fillOval(drawX - 2, drawY - 2, 38, 38);
+            g2d.setColor(new Color(156, 238, 224, 180));
+            g2d.fillOval(drawX + 4, drawY + 4, 26, 26);
+            g2d.setColor(new Color(18, 24, 26));
+            g2d.drawOval(drawX + 4, drawY + 4, 26, 26);
+            g2d.setColor(new Color(236, 248, 252));
+            g2d.fillOval(drawX + 14, drawY + 12, 6, 6);
+            g2d.fillOval(drawX + 18, drawY + 18, 4, 4);
+        }
+    }
+
     private void drawPlatformBlock(Graphics2D g2d, Platform platform, Color base, Color highlight) {
         int x = (int) platform.getX();
         int y = (int) platform.getY();
@@ -1392,7 +1569,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
         Color panelBg = new Color(10, 8, 18, 210);
         Color panelAccent = new Color(126, 66, 156, 180);
-        int panelHeight = 300;
+        int panelHeight = 380;
         g2d.setColor(panelBg);
         g2d.fillRoundRect(12, 12, 270, panelHeight, 18, 18);
         g2d.setColor(new Color(18, 12, 30, 170));
@@ -1414,6 +1591,14 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.drawString("Time: " + String.format("%.1fs", objectiveManager.getElapsedTime()), 28, 132);
         g2d.drawString("Par: " + String.format("%.1fs", objectiveManager.getParTimeSeconds()), 28, 154);
         g2d.drawString("Deaths: " + deathCount, 28, 176);
+        if (objectiveManager.getParTimeSeconds() > 0) {
+            double delta = objectiveManager.getParTimeSeconds() - objectiveManager.getElapsedTime();
+            Color deltaColor = delta >= 0 ? new Color(148, 218, 156) : new Color(232, 152, 144);
+            g2d.setColor(deltaColor);
+            String deltaText = "Par Delta: " + (delta >= 0 ? "+" : "-") + String.format("%.1fs", Math.abs(delta));
+            g2d.drawString(deltaText, 28, 198);
+            g2d.setColor(new Color(192, 178, 166));
+        }
 
         if (multiplayerActive) {
             g2d.drawString("Link: " + describeLink(), 28, 198);
@@ -1430,6 +1615,21 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             double parProgress = Math.min(1.0, elapsed / par);
             Color parColor = elapsed <= par ? new Color(182, 210, 110) : new Color(196, 86, 102);
             drawProgressBar(g2d, 28, 260, 210, 14, parProgress, parColor, "Par pace");
+        }
+
+        if (!multiplayerActive) {
+            int checklistY = 286;
+            drawChallengeLine(g2d, 28, checklistY, "All orbs", collected == orbs.size());
+            drawChallengeLine(g2d, 28, checklistY + 18, "Beat par", objectiveManager.getParTimeSeconds() <= 0 || objectiveManager.getElapsedTime() <= objectiveManager.getParTimeSeconds());
+            drawChallengeLine(g2d, 28, checklistY + 36, "Deathless", deathlessRun && deathCount == 0);
+            drawChallengeLine(g2d, 28, checklistY + 54, "Streak: x" + Math.max(1, orbStreak), orbStreak >= 2);
+
+            String broadcast = getSoloBroadcasts()[radioIndex % getSoloBroadcasts().length];
+            g2d.setFont(new Font("Consolas", Font.PLAIN, 14));
+            g2d.setColor(new Color(172, 202, 218));
+            g2d.drawString("Broadcast: " + broadcast, 28, checklistY + 80);
+            g2d.setFont(new Font("Consolas", Font.PLAIN, 16));
+            g2d.setColor(new Color(192, 178, 166));
         }
 
         int cooldownX = BASE_WIDTH - 230;
@@ -1527,6 +1727,21 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.drawString(label, x, y - 4);
     }
 
+    private void drawChallengeLine(Graphics2D g2d, int x, int y, String label, boolean complete) {
+        Color box = complete ? new Color(142, 214, 166) : new Color(142, 136, 166);
+        g2d.setColor(new Color(10, 8, 18, 180));
+        g2d.fillRoundRect(x - 6, y - 12, 220, 18, 8, 8);
+        g2d.setColor(box);
+        g2d.drawRoundRect(x - 6, y - 12, 220, 18, 8, 8);
+        g2d.fillRect(x - 2, y - 8, 10, 10);
+        if (complete) {
+            g2d.setColor(new Color(12, 18, 14));
+            g2d.fillRect(x, y - 6, 6, 6);
+        }
+        g2d.setColor(new Color(192, 178, 166));
+        g2d.drawString(label, x + 16, y);
+    }
+
     private void drawGravityCompass(Graphics2D g2d) {
         int size = 70;
         int x = BASE_WIDTH - size - 24;
@@ -1561,6 +1776,22 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.setStroke(new BasicStroke(1));
         g2d.setFont(new Font("Consolas", Font.PLAIN, 12));
         g2d.drawString("Gravity", x + 8, y + size + 14);
+    }
+
+    private void drawRespawnBeacon(Graphics2D g2d) {
+        if (respawnPosition == null) {
+            return;
+        }
+        double pulse = 0.5 + 0.5 * Math.sin(System.nanoTime() / 1_000_000_000.0 * 2.2);
+        int radius = (int) (12 + pulse * 6);
+        int x = (int) respawnPosition.x - radius + PLAYER_W / 2;
+        int y = (int) respawnPosition.y - radius + PLAYER_H / 2;
+        g2d.setColor(new Color(152, 206, 232, 90));
+        g2d.fillOval(x, y, radius * 2, radius * 2);
+        g2d.setColor(new Color(116, 176, 220, 150));
+        g2d.drawOval(x, y, radius * 2, radius * 2);
+        g2d.setColor(new Color(224, 234, 248, 200));
+        g2d.fillOval((int) respawnPosition.x + PLAYER_W / 2 - 4, (int) respawnPosition.y + PLAYER_H / 2 - 4, 8, 8);
     }
 
     private void drawPauseMenu(Graphics2D g2d) {
