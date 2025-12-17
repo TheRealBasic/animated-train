@@ -100,12 +100,12 @@ public class MultiplayerSession {
         });
     }
 
-    public void sendState(double x, double y, GravityDir gravity, long orbMask) {
+    public void sendState(double x, double y, GravityDir gravity, long orbMask, int paletteIndex, boolean ready, boolean sharedRespawns) {
         try {
             if (writer == null) {
                 writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8));
             }
-            String payload = String.format("STATE %.2f %.2f %s %d\n", x, y, gravity.name(), orbMask);
+            String payload = String.format("STATE %.2f %.2f %s %d %d %d %d\n", x, y, gravity.name(), orbMask, paletteIndex, ready ? 1 : 0, sharedRespawns ? 1 : 0);
             writer.write(payload);
             writer.flush();
         } catch (IOException ignored) {
@@ -118,6 +118,28 @@ public class MultiplayerSession {
                 writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8));
             }
             writer.write("LEVEL " + index + "\n");
+            writer.flush();
+        } catch (IOException ignored) {
+        }
+    }
+
+    public void sendStart() {
+        try {
+            if (writer == null) {
+                writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8));
+            }
+            writer.write("START\n");
+            writer.flush();
+        } catch (IOException ignored) {
+        }
+    }
+
+    public void sendRespawnSignal() {
+        try {
+            if (writer == null) {
+                writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8));
+            }
+            writer.write("RESPAWN\n");
             writer.flush();
         } catch (IOException ignored) {
         }
@@ -139,9 +161,11 @@ public class MultiplayerSession {
         return role;
     }
 
-    public record RemoteState(Double x, Double y, GravityDir gravity, Long orbMask, Integer levelIndex) {
+    public record RemoteState(Double x, Double y, GravityDir gravity, Long orbMask, Integer levelIndex,
+                             Integer paletteIndex, Boolean ready, Boolean sharedRespawns,
+                             boolean startSignal, boolean respawnSignal) {
         public RemoteState() {
-            this(null, null, null, null, null);
+            this(null, null, null, null, null, null, null, null, false, false);
         }
 
         private static RemoteState parse(String line) {
@@ -158,7 +182,10 @@ public class MultiplayerSession {
                     double y = Double.parseDouble(parts[2]);
                     GravityDir gravity = GravityDir.valueOf(parts[3]);
                     long mask = Long.parseLong(parts[4]);
-                    return new RemoteState(x, y, gravity, mask, null);
+                    Integer palette = parts.length >= 6 ? Integer.parseInt(parts[5]) : null;
+                    Boolean ready = parts.length >= 7 ? Integer.parseInt(parts[6]) == 1 : null;
+                    Boolean shared = parts.length >= 8 ? Integer.parseInt(parts[7]) == 1 : null;
+                    return new RemoteState(x, y, gravity, mask, null, palette, ready, shared, false, false);
                 } catch (Exception ex) {
                     return null;
                 }
@@ -166,10 +193,16 @@ public class MultiplayerSession {
             if ("LEVEL".equals(parts[0]) && parts.length >= 2) {
                 try {
                     int level = Integer.parseInt(parts[1]);
-                    return new RemoteState(null, null, null, null, level);
+                    return new RemoteState(null, null, null, null, level, null, null, null, false, false);
                 } catch (NumberFormatException ex) {
                     return null;
                 }
+            }
+            if ("START".equals(parts[0])) {
+                return new RemoteState(null, null, null, null, null, null, null, null, true, false);
+            }
+            if ("RESPAWN".equals(parts[0])) {
+                return new RemoteState(null, null, null, null, null, null, null, null, false, true);
             }
             return null;
         }

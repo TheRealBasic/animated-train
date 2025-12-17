@@ -11,6 +11,8 @@ public class Settings {
     private boolean showDebugHud = false;
     private boolean showFps = false;
     private boolean reducedEffects = false;
+    private boolean sharedRespawns = true;
+    private int suitPalette = 0;
     private int keyLeft = java.awt.event.KeyEvent.VK_A;
     private int keyRight = java.awt.event.KeyEvent.VK_D;
     private int keyJump = java.awt.event.KeyEvent.VK_SPACE;
@@ -30,6 +32,8 @@ public class Settings {
             settings.showDebugHud = Boolean.parseBoolean(props.getProperty("showDebugHud", "false"));
             settings.showFps = Boolean.parseBoolean(props.getProperty("showFps", "false"));
             settings.reducedEffects = Boolean.parseBoolean(props.getProperty("reducedEffects", "false"));
+            settings.sharedRespawns = Boolean.parseBoolean(props.getProperty("sharedRespawns", "true"));
+            settings.suitPalette = Integer.parseInt(props.getProperty("suitPalette", "0"));
             settings.keyLeft = Integer.parseInt(props.getProperty("keyLeft", Integer.toString(settings.keyLeft)));
             settings.keyRight = Integer.parseInt(props.getProperty("keyRight", Integer.toString(settings.keyRight)));
             settings.keyJump = Integer.parseInt(props.getProperty("keyJump", Integer.toString(settings.keyJump)));
@@ -51,6 +55,8 @@ public class Settings {
         props.setProperty("showDebugHud", Boolean.toString(showDebugHud));
         props.setProperty("showFps", Boolean.toString(showFps));
         props.setProperty("reducedEffects", Boolean.toString(reducedEffects));
+        props.setProperty("sharedRespawns", Boolean.toString(sharedRespawns));
+        props.setProperty("suitPalette", Integer.toString(suitPalette));
         props.setProperty("keyLeft", Integer.toString(keyLeft));
         props.setProperty("keyRight", Integer.toString(keyRight));
         props.setProperty("keyJump", Integer.toString(keyJump));
@@ -91,6 +97,22 @@ public class Settings {
 
     public void setReducedEffects(boolean reducedEffects) {
         this.reducedEffects = reducedEffects;
+    }
+
+    public boolean isSharedRespawns() {
+        return sharedRespawns;
+    }
+
+    public void setSharedRespawns(boolean sharedRespawns) {
+        this.sharedRespawns = sharedRespawns;
+    }
+
+    public int getSuitPalette() {
+        return suitPalette;
+    }
+
+    public void setSuitPalette(int suitPalette) {
+        this.suitPalette = Math.max(0, suitPalette);
     }
 
     public int getKeyLeft() {
