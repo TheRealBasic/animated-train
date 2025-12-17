@@ -906,7 +906,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         renderScene(sceneG);
         sceneG.dispose();
 
-        BufferedImage processed = settings.isScreenEffectsEnabled() ? applyScreenEffects(sceneBuffer) : sceneBuffer;
+        BufferedImage processed = settings.isScreenProcessingEnabled() ? applyScreenEffects(sceneBuffer) : sceneBuffer;
 
         Graphics2D g2d = (Graphics2D) g;
         g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
@@ -917,7 +917,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.translate(offsetX, offsetY);
         g2d.scale(renderScale, renderScale);
         g2d.drawImage(processed, 0, 0, null);
-        if (settings.isScreenEffectsEnabled()) {
+        if (settings.isScreenBezelEnabled()) {
             drawCrtBezel(g2d);
         }
         g2d.setTransform(oldTransform);
@@ -987,58 +987,70 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private BufferedImage applyScreenEffects(BufferedImage source) {
-        if (!settings.isScreenEffectsEnabled()) {
+        if (!settings.isScreenProcessingEnabled()) {
             return source;
         }
         int width = source.getWidth();
         int height = source.getHeight();
         ensureBuffers(width, height);
         BufferedImage distorted = distortionBuffer;
-        int[] src = ((DataBufferInt) source.getRaster().getDataBuffer()).getData();
-        int[] dst = ((DataBufferInt) distorted.getRaster().getDataBuffer()).getData();
 
-        double cx = width / 2.0;
-        double cy = height / 2.0;
-        double fishEyeStrength = 0.18;
-        double aberration = 0.6 + 3.2 * Math.min(1.0, deathEffectTimer);
-        double wobble = 0.35 * Math.sin(System.nanoTime() / 1_000_000_000.0 * 4.0);
-        aberration += wobble;
+        if (settings.isScreenDistortionEnabled()) {
+            int[] src = ((DataBufferInt) source.getRaster().getDataBuffer()).getData();
+            int[] dst = ((DataBufferInt) distorted.getRaster().getDataBuffer()).getData();
 
-        double shakeDuration = 0.6;
-        double shakeScale = screenShakeTimer > 0 ? screenShakeStrength * (screenShakeTimer / shakeDuration) : 0.0;
-        double shakeX = (vhsNoise.nextDouble() * 2 - 1) * shakeScale;
-        double shakeY = (vhsNoise.nextDouble() * 2 - 1) * shakeScale;
+            double cx = width / 2.0;
+            double cy = height / 2.0;
+            double fishEyeStrength = 0.18;
+            double aberration = 0.6 + 3.2 * Math.min(1.0, deathEffectTimer);
+            double wobble = 0.35 * Math.sin(System.nanoTime() / 1_000_000_000.0 * 4.0);
+            aberration += wobble;
 
-        for (int y = 0; y < height; y++) {
-            double dy = (y - cy - shakeY) / cy;
-            for (int x = 0; x < width; x++) {
-                double dx = (x - cx - shakeX) / cx;
-                double r = Math.sqrt(dx * dx + dy * dy);
-                double distort = 1 + fishEyeStrength * r * r;
-                double sampleX = cx + dx * distort * cx + shakeX;
-                double sampleY = cy + dy * distort * cy + shakeY;
+            double shakeDuration = 0.6;
+            double shakeScale = screenShakeTimer > 0 ? screenShakeStrength * (screenShakeTimer / shakeDuration) : 0.0;
+            double shakeX = (vhsNoise.nextDouble() * 2 - 1) * shakeScale;
+            double shakeY = (vhsNoise.nextDouble() * 2 - 1) * shakeScale;
 
-                int baseX = clampToInt(Math.round(sampleX), 0, width - 1);
-                int baseY = clampToInt(Math.round(sampleY), 0, height - 1);
-                int baseRgb = src[baseY * width + baseX];
-                int alpha = (baseRgb >>> 24) & 0xFF;
+            for (int y = 0; y < height; y++) {
+                double dy = (y - cy - shakeY) / cy;
+                for (int x = 0; x < width; x++) {
+                    double dx = (x - cx - shakeX) / cx;
+                    double r = Math.sqrt(dx * dx + dy * dy);
+                    double distort = 1 + fishEyeStrength * r * r;
+                    double sampleX = cx + dx * distort * cx + shakeX;
+                    double sampleY = cy + dy * distort * cy + shakeY;
 
-                int rSample = sampleChannel(src, sampleX + aberration, sampleY - aberration, width, height, 16);
-                int gSample = sampleChannel(src, sampleX, sampleY, width, height, 8);
-                int bSample = sampleChannel(src, sampleX - aberration, sampleY + aberration, width, height, 0);
+                    int baseX = clampToInt(Math.round(sampleX), 0, width - 1);
+                    int baseY = clampToInt(Math.round(sampleY), 0, height - 1);
+                    int baseRgb = src[baseY * width + baseX];
+                    int alpha = (baseRgb >>> 24) & 0xFF;
 
-                int rgb = (alpha << 24) | (rSample << 16) | (gSample << 8) | bSample;
-                dst[y * width + x] = rgb;
+                    int rSample = sampleChannel(src, sampleX + aberration, sampleY - aberration, width, height, 16);
+                    int gSample = sampleChannel(src, sampleX, sampleY, width, height, 8);
+                    int bSample = sampleChannel(src, sampleX - aberration, sampleY + aberration, width, height, 0);
+
+                    int rgb = (alpha << 24) | (rSample << 16) | (gSample << 8) | bSample;
+                    dst[y * width + x] = rgb;
+                }
             }
+        } else {
+            Graphics2D copy = distorted.createGraphics();
+            copy.drawImage(source, 0, 0, null);
+            copy.dispose();
         }
 
-        BufferedImage smeared = addColorSmear(distorted);
+        BufferedImage processed = settings.isScreenDistortionEnabled() ? addColorSmear(distorted) : distorted;
 
-        Graphics2D overlay = smeared.createGraphics();
+        if (!settings.isScreenOverlayEnabled()) {
+            return processed;
+        }
+
+        Graphics2D overlay = processed.createGraphics();
         overlay.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        drawCrtOverlay(overlay);
+        boolean allowJitter = gameState == GameState.IN_GAME || gameState == GameState.PAUSE || gameState == GameState.LEVEL_COMPLETE;
+        drawCrtOverlay(overlay, allowJitter);
         overlay.dispose();
-        return smeared;
+        return processed;
     }
 
     private BufferedImage addColorSmear(BufferedImage source) {
@@ -1114,10 +1126,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
     }
 
-    private void drawCrtOverlay(Graphics2D g2d) {
+    private void drawCrtOverlay(Graphics2D g2d, boolean allowJitter) {
         AffineTransform oldTransform = g2d.getTransform();
         double t = System.nanoTime() / 1_000_000_000.0;
-        int jitter = (int) (Math.sin(t * 7.3) * 2);
+        int jitter = allowJitter ? (int) (Math.sin(t * 7.3) * 2) : 0;
         g2d.translate(jitter, 0);
 
         int vignetteAlpha = (int) (48 + 18 * (1 + Math.sin(t * 0.7)) / 2);
@@ -1531,18 +1543,21 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         lines.add("Movement Effects: " + (settings.isMovementEffectsEnabled() ? "On" : "Off"));
         lines.add("Jump Effects: " + (settings.isJumpEffectsEnabled() ? "On" : "Off"));
         lines.add("Death Effects: " + (settings.isDeathEffectsEnabled() ? "On" : "Off"));
-        lines.add("Screen Effects: " + (settings.isScreenEffectsEnabled() ? "On" : "Off"));
+        lines.add("Screen Distortion: " + (settings.isScreenDistortionEnabled() ? "On" : "Off"));
+        lines.add("Screen Overlay: " + (settings.isScreenOverlayEnabled() ? "On" : "Off"));
+        lines.add("CRT Bezel: " + (settings.isScreenBezelEnabled() ? "On" : "Off"));
         lines.add("Rebind Left: " + KeyEvent.getKeyText(settings.getKeyLeft()));
         lines.add("Rebind Right: " + KeyEvent.getKeyText(settings.getKeyRight()));
         lines.add("Rebind Jump: " + KeyEvent.getKeyText(settings.getKeyJump()));
         lines.add("Back");
 
-        int startY = 200;
+        int startY = 150;
+        int lineSpacing = 28;
         for (int i = 0; i < lines.size(); i++) {
             g2d.setColor(settingsMenuIndex == i ? new Color(198, 112, 230) : new Color(218, 208, 196));
             String text = lines.get(i);
             int width = g2d.getFontMetrics().stringWidth(text);
-            g2d.drawString(text, (BASE_WIDTH - width) / 2, startY + i * 32);
+            g2d.drawString(text, (BASE_WIDTH - width) / 2, startY + i * lineSpacing);
         }
         if (waitingForBinding) {
             drawControlHint(g2d, "Press a key to bind for " + bindingTarget);
@@ -1910,7 +1925,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
         g2d.setFont(new Font("Consolas", Font.PLAIN, 14));
         String controlsText = "Controls: A/D move • Space jump • Shift sprint • R restart • I/J/K/L rotate";
-        int bezelOffset = settings.isScreenEffectsEnabled() ? 70 : 12;
+        int bezelOffset = settings.isScreenBezelEnabled() ? 70 : 12;
         int controlsY = BASE_HEIGHT - bezelOffset;
         int controlsX = 18;
         int controlsWidth = g2d.getFontMetrics().stringWidth(controlsText);
@@ -2586,22 +2601,30 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 settings.save();
                 break;
             case 7:
-                settings.setScreenEffectsEnabled(!settings.isScreenEffectsEnabled());
+                settings.setScreenDistortionEnabled(!settings.isScreenDistortionEnabled());
                 settings.save();
                 break;
             case 8:
-                waitingForBinding = true;
-                bindingTarget = "Left";
+                settings.setScreenOverlayEnabled(!settings.isScreenOverlayEnabled());
+                settings.save();
                 break;
             case 9:
-                waitingForBinding = true;
-                bindingTarget = "Right";
+                settings.setScreenBezelEnabled(!settings.isScreenBezelEnabled());
+                settings.save();
                 break;
             case 10:
                 waitingForBinding = true;
-                bindingTarget = "Jump";
+                bindingTarget = "Left";
                 break;
             case 11:
+                waitingForBinding = true;
+                bindingTarget = "Right";
+                break;
+            case 12:
+                waitingForBinding = true;
+                bindingTarget = "Jump";
+                break;
+            case 13:
                 settings.save();
                 gameState = previousStateBeforeSettings;
                 break;
