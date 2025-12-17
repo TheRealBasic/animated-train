@@ -137,6 +137,8 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private double splashElapsed;
     private double splashDuration;
     private double fakeLoadProgress;
+    private double levelLoadProgress;
+    private int pendingLevelIndex = -1;
     private SoloCompanion companion;
     private double radioTimer;
     private int radioIndex;
@@ -154,6 +156,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         MULTIPLAYER_WAIT,
         SETTINGS,
         LEVEL_SELECT,
+        LOADING,
         IN_GAME,
         PAUSE,
         LEVEL_COMPLETE,
@@ -180,6 +183,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         splashElapsed = 0;
         splashDuration = 3.0 + vhsNoise.nextDouble() * 4.0;
         fakeLoadProgress = 0;
+        levelLoadProgress = 0;
         companion = new SoloCompanion();
         radioTimer = 0;
         radioIndex = 0;
@@ -264,6 +268,18 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         remoteReady = false;
     }
 
+    private void startLevelLoad(int index) {
+        if (multiplayerActive) {
+            loadLevel(index);
+            gameState = GameState.IN_GAME;
+            return;
+        }
+        pendingLevelIndex = Math.max(0, Math.min(levelManager.getLevelCount() - 1, index));
+        loadLevel(pendingLevelIndex);
+        levelLoadProgress = 0;
+        gameState = GameState.LOADING;
+    }
+
     @Override
     public void actionPerformed(ActionEvent e) {
         long now = System.nanoTime();
@@ -288,6 +304,13 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
         if (gameState == GameState.SPLASH) {
             updateSplash(dt);
+            updateEffects(dt);
+            repaint();
+            return;
+        }
+
+        if (gameState == GameState.LOADING) {
+            updateLevelLoading(dt);
             updateEffects(dt);
             repaint();
             return;
@@ -685,6 +708,20 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
     }
 
+    private void updateLevelLoading(double dt) {
+        double wobble = (vhsNoise.nextDouble() - 0.5) * 0.1;
+        double speed = 0.7 + vhsNoise.nextDouble() * 0.6;
+        double target = Math.min(1.0, levelLoadProgress + speed * dt);
+        double easing = Math.min(1.0, dt * 5.0);
+        levelLoadProgress += (target - levelLoadProgress) * easing;
+        levelLoadProgress = Math.max(0, Math.min(1.0, levelLoadProgress + wobble * dt));
+        if (levelLoadProgress >= 0.995) {
+            levelLoadProgress = 1.0;
+            pendingLevelIndex = -1;
+            gameState = GameState.IN_GAME;
+        }
+    }
+
     private void updateGravityCooldown(double dt) {
         if (gravityCooldownRemaining > 0) {
             gravityCooldownRemaining = Math.max(0, gravityCooldownRemaining - dt);
@@ -856,8 +893,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             saveData.currentLevelIndex = levelManager.getLevelCount() - 1;
             idx = saveData.currentLevelIndex;
         }
-        loadLevel(idx);
-        gameState = GameState.IN_GAME;
+        startLevelLoad(idx);
     }
 
     @Override
@@ -927,6 +963,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             case LEVEL_SELECT:
                 drawTitle(g2d, "Level Select");
                 drawLevelSelect(g2d);
+                break;
+            case LOADING:
+                drawLoadingScreen(g2d);
                 break;
             case IN_GAME:
                 drawWorld(g2d);
@@ -1163,6 +1202,125 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         String tip = "Press Enter to skip";
         int tipWidth = g2d.getFontMetrics().stringWidth(tip);
         g2d.drawString(tip, (BASE_WIDTH - tipWidth) / 2, barY + barHeight + 54);
+    }
+
+    private void drawLoadingScreen(Graphics2D g2d) {
+        g2d.setColor(new Color(12, 10, 18, 230));
+        g2d.fillRoundRect(36, 46, BASE_WIDTH - 72, BASE_HEIGHT - 92, 22, 22);
+        g2d.setColor(new Color(122, 84, 170, 140));
+        g2d.setStroke(new BasicStroke(3f));
+        g2d.drawRoundRect(36, 46, BASE_WIDTH - 72, BASE_HEIGHT - 92, 22, 22);
+
+        double builtFraction = Math.pow(levelLoadProgress, 0.85);
+        String levelName = "Level";
+        if (pendingLevelIndex >= 0) {
+            LevelData pending = levelManager.getLevel(pendingLevelIndex);
+            if (pending != null) {
+                levelName = pending.getName();
+            }
+        }
+
+        g2d.setFont(new Font("Consolas", Font.BOLD, 32));
+        g2d.setColor(new Color(214, 210, 196));
+        String title = "Constructing Level";
+        int titleWidth = g2d.getFontMetrics().stringWidth(title);
+        g2d.drawString(title, (BASE_WIDTH - titleWidth) / 2, 110);
+
+        g2d.setFont(new Font("Consolas", Font.PLAIN, 20));
+        g2d.setColor(new Color(188, 174, 160));
+        String subtitle = "Assembling: " + levelName;
+        int subtitleWidth = g2d.getFontMetrics().stringWidth(subtitle);
+        g2d.drawString(subtitle, (BASE_WIDTH - subtitleWidth) / 2, 142);
+
+        int previewX = 80;
+        int previewY = 160;
+        int previewW = BASE_WIDTH - 160;
+        int previewH = 260;
+        g2d.setColor(new Color(26, 18, 30, 210));
+        g2d.fillRoundRect(previewX, previewY, previewW, previewH, 18, 18);
+        g2d.setColor(new Color(98, 68, 148, 160));
+        g2d.drawRoundRect(previewX, previewY, previewW, previewH, 18, 18);
+
+        AffineTransform old = g2d.getTransform();
+        g2d.translate(previewX, previewY);
+        g2d.scale(previewW / (double) BASE_WIDTH, previewH / (double) BASE_HEIGHT);
+        g2d.setStroke(new BasicStroke(1.2f));
+        g2d.setColor(new Color(42, 32, 54, 120));
+        for (int x = 0; x < BASE_WIDTH; x += 80) {
+            g2d.drawLine(x, 0, x, BASE_HEIGHT);
+        }
+        for (int y = 0; y < BASE_HEIGHT; y += 60) {
+            g2d.drawLine(0, y, BASE_WIDTH, y);
+        }
+
+        int platformCount = platforms == null ? 0 : (int) Math.round(platforms.size() * builtFraction);
+        int moverCount = movers == null ? 0 : (int) Math.round(movers.size() * builtFraction);
+        int spikeCount = spikes == null ? 0 : (int) Math.round(spikes.size() * builtFraction);
+        int orbCount = orbs == null ? 0 : (int) Math.round(orbs.size() * builtFraction);
+
+        g2d.setColor(new Color(118, 94, 156));
+        for (int i = 0; i < platformCount; i++) {
+            Platform p = platforms.get(i);
+            g2d.fillRect((int) p.getX(), (int) p.getY(), p.getWidth(), p.getHeight());
+        }
+        g2d.setColor(new Color(108, 136, 180));
+        for (int i = 0; i < moverCount; i++) {
+            MovingPlatform m = movers.get(i);
+            g2d.fillRect((int) m.getX(), (int) m.getY(), m.getWidth(), m.getHeight());
+        }
+        g2d.setColor(new Color(186, 104, 126, 220));
+        for (int i = 0; i < spikeCount; i++) {
+            Spike spike = spikes.get(i);
+            g2d.fillRect((int) spike.getX(), (int) spike.getY(), spike.getWidth(), spike.getHeight());
+        }
+        g2d.setColor(new Color(138, 214, 186, 180));
+        for (int i = 0; i < orbCount; i++) {
+            FluxOrb orb = orbs.get(i);
+            int radius = orb.getRadius();
+            int cx = (int) orb.getPosition().x - radius;
+            int cy = (int) orb.getPosition().y - radius;
+            g2d.fillOval(cx, cy, radius * 2, radius * 2);
+        }
+
+        g2d.setColor(new Color(214, 168, 112, 180));
+        ExitGate gate = this.exitGate;
+        if (gate != null && builtFraction > 0.65) {
+            g2d.fillRoundRect((int) gate.getX(), (int) gate.getY(), gate.getWidth(), gate.getHeight(), 8, 8);
+        }
+
+        g2d.setTransform(old);
+
+        int barWidth = 520;
+        int barHeight = 20;
+        int barX = (BASE_WIDTH - barWidth) / 2;
+        int barY = previewY + previewH + 40;
+        g2d.setColor(new Color(42, 30, 54));
+        g2d.fillRoundRect(barX, barY, barWidth, barHeight, 10, 10);
+        g2d.setColor(new Color(154, 118, 176));
+        g2d.drawRoundRect(barX, barY, barWidth, barHeight, 10, 10);
+
+        int fill = (int) (barWidth * levelLoadProgress);
+        GradientPaint fillPaint = new GradientPaint(barX, barY, new Color(178, 118, 232), barX + fill, barY + barHeight, new Color(112, 182, 214));
+        g2d.setPaint(fillPaint);
+        g2d.fillRoundRect(barX, barY, fill, barHeight, 10, 10);
+
+        g2d.setFont(new Font("Consolas", Font.PLAIN, 18));
+        g2d.setColor(new Color(214, 206, 192));
+        String percent = String.format("%d%%", (int) Math.round(levelLoadProgress * 100));
+        int pctWidth = g2d.getFontMetrics().stringWidth(percent);
+        g2d.drawString(percent, (BASE_WIDTH - pctWidth) / 2, barY + barHeight + 28);
+
+        String status;
+        if (levelLoadProgress < 0.35) {
+            status = "Laying out geometry";
+        } else if (levelLoadProgress < 0.7) {
+            status = "Bolting hazards into place";
+        } else {
+            status = "Charging flux orbs";
+        }
+        g2d.setColor(new Color(186, 150, 118));
+        int statusWidth = g2d.getFontMetrics().stringWidth(status);
+        g2d.drawString(status, (BASE_WIDTH - statusWidth) / 2, barY + barHeight + 52);
     }
 
     private void drawCrtBezel(Graphics2D g2d) {
@@ -1963,6 +2121,14 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             return;
         }
 
+        if (gameState == GameState.LOADING) {
+            if (e.getKeyCode() == KeyEvent.VK_ENTER || e.getKeyCode() == KeyEvent.VK_SPACE) {
+                levelLoadProgress = 1.0;
+                gameState = GameState.IN_GAME;
+            }
+            return;
+        }
+
         if (gameState == GameState.MAIN_MENU) {
             handleMenuNavigation(e, 7, () -> handleMainMenuSelect(mainMenuIndex));
             return;
@@ -2057,8 +2223,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
 
         if (e.getKeyCode() == KeyEvent.VK_R) {
-            loadLevel(saveData.currentLevelIndex);
-            gameState = GameState.IN_GAME;
+            startLevelLoad(saveData.currentLevelIndex);
             setToast("Level restarted", new Color(210, 186, 236));
             return;
         }
@@ -2146,14 +2311,12 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private void handleMainMenuSelect(int index) {
         switch (index) {
             case 0: // Continue
-                loadLevel(Math.min(saveData.currentLevelIndex, levelManager.getLevelCount() - 1));
-                gameState = GameState.IN_GAME;
+                startLevelLoad(Math.min(saveData.currentLevelIndex, levelManager.getLevelCount() - 1));
                 break;
             case 1: // New Game
                 SaveGame.wipe();
                 saveData = SaveGame.load(levelManager.getLevelCount());
-                loadLevel(0);
-                gameState = GameState.IN_GAME;
+                startLevelLoad(0);
                 break;
             case 2: // Level Select
                 gameState = GameState.LEVEL_SELECT;
@@ -2183,8 +2346,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 gameState = GameState.IN_GAME;
                 break;
             case 1:
-                loadLevel(saveData.currentLevelIndex);
-                gameState = GameState.IN_GAME;
+                startLevelLoad(saveData.currentLevelIndex);
                 break;
             case 2:
                 previousStateBeforeSettings = GameState.PAUSE;
@@ -2204,8 +2366,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         if (index < saveData.unlockedLevels) {
             saveData.currentLevelIndex = index;
             SaveGame.save(saveData);
-            loadLevel(index);
-            gameState = GameState.IN_GAME;
+            startLevelLoad(index);
         }
     }
 

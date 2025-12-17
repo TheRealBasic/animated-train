@@ -63,6 +63,22 @@ public class ExitGate {
         return unlocked;
     }
 
+    public double getX() {
+        return x;
+    }
+
+    public double getY() {
+        return y;
+    }
+
+    public int getWidth() {
+        return width;
+    }
+
+    public int getHeight() {
+        return height;
+    }
+
     public void setPosition(double x, double y) {
         this.x = x;
         this.y = y;
