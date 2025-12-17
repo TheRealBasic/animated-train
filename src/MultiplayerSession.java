@@ -192,6 +192,12 @@ public class MultiplayerSession {
                 return null;
             }
             String[] parts = line.split(" ");
+            if ("START".equals(parts[0])) {
+                return new RemoteState(null, null, null, null, null, null, null, null, true, false);
+            }
+            if ("RESPAWN".equals(parts[0])) {
+                return new RemoteState(null, null, null, null, null, null, null, null, false, true);
+            }
             if (parts.length < 2) {
                 return null;
             }
@@ -216,12 +222,6 @@ public class MultiplayerSession {
                 } catch (NumberFormatException ex) {
                     return null;
                 }
-            }
-            if ("START".equals(parts[0])) {
-                return new RemoteState(null, null, null, null, null, null, null, null, true, false);
-            }
-            if ("RESPAWN".equals(parts[0])) {
-                return new RemoteState(null, null, null, null, null, null, null, null, false, true);
             }
             return null;
         }
