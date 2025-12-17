@@ -413,7 +413,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private void updateMovementEffects(double dt) {
-        if (settings.isReducedEffects()) {
+        if (!settings.isMovementEffectsEnabled()) {
             wasGrounded = player.isGrounded();
             return;
         }
@@ -470,7 +470,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private void spawnJumpSmoke() {
-        if (settings.isReducedEffects()) {
+        if (!settings.isJumpEffectsEnabled()) {
             return;
         }
         Point2D.Double normal = getGravityNormal(gravityDir);
@@ -485,7 +485,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private void spawnDeathBurst() {
-        if (settings.isReducedEffects()) {
+        if (!settings.isDeathEffectsEnabled()) {
             return;
         }
         double baseX = player.getX() + player.getWidth() / 2.0;
@@ -906,7 +906,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         renderScene(sceneG);
         sceneG.dispose();
 
-        BufferedImage processed = settings.isReducedEffects() ? sceneBuffer : applyScreenEffects(sceneBuffer);
+        BufferedImage processed = settings.isScreenEffectsEnabled() ? applyScreenEffects(sceneBuffer) : sceneBuffer;
 
         Graphics2D g2d = (Graphics2D) g;
         g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
@@ -917,7 +917,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.translate(offsetX, offsetY);
         g2d.scale(renderScale, renderScale);
         g2d.drawImage(processed, 0, 0, null);
-        if (!settings.isReducedEffects()) {
+        if (settings.isScreenEffectsEnabled()) {
             drawCrtBezel(g2d);
         }
         g2d.setTransform(oldTransform);
@@ -987,7 +987,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private BufferedImage applyScreenEffects(BufferedImage source) {
-        if (settings.isReducedEffects()) {
+        if (!settings.isScreenEffectsEnabled()) {
             return source;
         }
         int width = source.getWidth();
@@ -1528,7 +1528,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         lines.add("Screen Scale: " + String.format("%.1fx", settings.getScreenScale()));
         lines.add("Show Debug HUD: " + (settings.isShowDebugHud() ? "On" : "Off"));
         lines.add("Show FPS Counter: " + (settings.isShowFps() ? "On" : "Off"));
-        lines.add("Reduced Effects: " + (settings.isReducedEffects() ? "On" : "Off"));
+        lines.add("Movement Effects: " + (settings.isMovementEffectsEnabled() ? "On" : "Off"));
+        lines.add("Jump Effects: " + (settings.isJumpEffectsEnabled() ? "On" : "Off"));
+        lines.add("Death Effects: " + (settings.isDeathEffectsEnabled() ? "On" : "Off"));
+        lines.add("Screen Effects: " + (settings.isScreenEffectsEnabled() ? "On" : "Off"));
         lines.add("Rebind Left: " + KeyEvent.getKeyText(settings.getKeyLeft()));
         lines.add("Rebind Right: " + KeyEvent.getKeyText(settings.getKeyRight()));
         lines.add("Rebind Jump: " + KeyEvent.getKeyText(settings.getKeyJump()));
@@ -1907,7 +1910,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
         g2d.setFont(new Font("Consolas", Font.PLAIN, 14));
         String controlsText = "Controls: A/D move • Space jump • Shift sprint • R restart • I/J/K/L rotate";
-        int bezelOffset = settings.isReducedEffects() ? 12 : 70;
+        int bezelOffset = settings.isScreenEffectsEnabled() ? 70 : 12;
         int controlsY = BASE_HEIGHT - bezelOffset;
         int controlsX = 18;
         int controlsWidth = g2d.getFontMetrics().stringWidth(controlsText);
@@ -2231,7 +2234,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             return;
         }
         if (gameState == GameState.SETTINGS) {
-            handleMenuNavigation(e, 9, this::handleSettingsSelect);
+            handleMenuNavigation(e, 12, this::handleSettingsSelect);
             if (e.getKeyCode() == KeyEvent.VK_LEFT) {
                 adjustSetting(-1);
             } else if (e.getKeyCode() == KeyEvent.VK_RIGHT) {
@@ -2571,22 +2574,34 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 settings.save();
                 break;
             case 4:
-                settings.setReducedEffects(!settings.isReducedEffects());
+                settings.setMovementEffectsEnabled(!settings.isMovementEffectsEnabled());
                 settings.save();
                 break;
             case 5:
+                settings.setJumpEffectsEnabled(!settings.isJumpEffectsEnabled());
+                settings.save();
+                break;
+            case 6:
+                settings.setDeathEffectsEnabled(!settings.isDeathEffectsEnabled());
+                settings.save();
+                break;
+            case 7:
+                settings.setScreenEffectsEnabled(!settings.isScreenEffectsEnabled());
+                settings.save();
+                break;
+            case 8:
                 waitingForBinding = true;
                 bindingTarget = "Left";
                 break;
-            case 6:
+            case 9:
                 waitingForBinding = true;
                 bindingTarget = "Right";
                 break;
-            case 7:
+            case 10:
                 waitingForBinding = true;
                 bindingTarget = "Jump";
                 break;
-            case 8:
+            case 11:
                 settings.save();
                 gameState = previousStateBeforeSettings;
                 break;
@@ -2607,7 +2622,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private void handleSettingsSelect() {
-        if (settingsMenuIndex == 8) {
+        if (settingsMenuIndex == 11) {
             gameState = previousStateBeforeSettings;
         } else {
             adjustSetting(0);
