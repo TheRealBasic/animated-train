@@ -1187,6 +1187,13 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.setColor(new Color(110, 68, 142, 120));
         g2d.drawRoundRect(18, 18, BASE_WIDTH - 36, BASE_HEIGHT - 36, 14, 14);
 
+        int maskThickness = 14;
+        g2d.setColor(new Color(10, 6, 16, 160));
+        g2d.fillRect(0, 0, BASE_WIDTH, maskThickness);
+        g2d.fillRect(0, BASE_HEIGHT - maskThickness, BASE_WIDTH, maskThickness);
+        g2d.fillRect(0, maskThickness, maskThickness, BASE_HEIGHT - maskThickness * 2);
+        g2d.fillRect(BASE_WIDTH - maskThickness, maskThickness, maskThickness, BASE_HEIGHT - maskThickness * 2);
+
         int controlHeight = 60;
         int controlY = BASE_HEIGHT - controlHeight - 10;
         g2d.setStroke(new BasicStroke(3.2f));
@@ -1567,67 +1574,110 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private void drawHud(Graphics2D g2d) {
         long collected = orbs.stream().filter(FluxOrb::isCollected).count();
 
-        Color panelBg = new Color(10, 8, 18, 210);
+        Color panelBg = new Color(10, 8, 18, 200);
         Color panelAccent = new Color(126, 66, 156, 180);
-        int panelHeight = 380;
+        int panelX = 12;
+        int panelY = 12;
+        int panelWidth = 260;
+        int contentX = panelX + 14;
+        int y = panelY + 34;
+
+        g2d.setFont(new Font("Consolas", Font.BOLD, 18));
+        int metricLines = 6;
+        boolean hasPar = objectiveManager.getParTimeSeconds() > 0;
+        if (hasPar) {
+            metricLines += 1;
+        }
+        if (multiplayerActive) {
+            metricLines += 2;
+        }
+        int panelHeight = 60 + metricLines * 20 + 28 + (hasPar ? 28 : 0);
+
         g2d.setColor(panelBg);
-        g2d.fillRoundRect(12, 12, 270, panelHeight, 18, 18);
-        g2d.setColor(new Color(18, 12, 30, 170));
-        g2d.fillRoundRect(18, 24, 258, panelHeight - 24, 14, 14);
+        g2d.fillRoundRect(panelX, panelY, panelWidth, panelHeight, 18, 18);
+        g2d.setColor(new Color(18, 12, 30, 160));
+        g2d.fillRoundRect(panelX + 6, panelY + 10, panelWidth - 12, panelHeight - 16, 14, 14);
         g2d.setColor(panelAccent);
-        g2d.drawRoundRect(12, 12, 270, panelHeight, 18, 18);
         g2d.setStroke(new BasicStroke(2f));
-        g2d.drawRoundRect(18, 24, 258, panelHeight - 24, 14, 14);
+        g2d.drawRoundRect(panelX, panelY, panelWidth, panelHeight, 18, 18);
+        g2d.drawRoundRect(panelX + 6, panelY + 10, panelWidth - 12, panelHeight - 16, 14, 14);
 
         g2d.setColor(new Color(214, 206, 192));
-        g2d.setFont(new Font("Consolas", Font.BOLD, 18));
-        g2d.drawString("Mission Data", 28, 40);
+        g2d.drawString("Mission Data", contentX, y);
+        y += 22;
 
         g2d.setFont(new Font("Consolas", Font.PLAIN, 16));
         g2d.setColor(new Color(192, 178, 166));
-        g2d.drawString("Orbs: " + collected + "/" + orbs.size(), 28, 66);
-        g2d.drawString("Gate: " + (exitGate.isUnlocked() ? "Unlocked" : "Locked"), 28, 88);
-        g2d.drawString("Gravity: " + gravityDir.name(), 28, 110);
-        g2d.drawString("Time: " + String.format("%.1fs", objectiveManager.getElapsedTime()), 28, 132);
-        g2d.drawString("Par: " + String.format("%.1fs", objectiveManager.getParTimeSeconds()), 28, 154);
-        g2d.drawString("Deaths: " + deathCount, 28, 176);
+        g2d.drawString("Orbs: " + collected + "/" + orbs.size(), contentX, y);
+        y += 20;
+        g2d.drawString("Gate: " + (exitGate.isUnlocked() ? "Unlocked" : "Locked"), contentX, y);
+        y += 20;
+        g2d.drawString("Gravity: " + gravityDir.name(), contentX, y);
+        y += 20;
+        g2d.drawString("Time: " + String.format("%.1fs", objectiveManager.getElapsedTime()), contentX, y);
+        y += 20;
+        g2d.drawString("Par: " + String.format("%.1fs", objectiveManager.getParTimeSeconds()), contentX, y);
+        y += 20;
+        g2d.drawString("Deaths: " + deathCount, contentX, y);
+        y += 20;
         if (objectiveManager.getParTimeSeconds() > 0) {
             double delta = objectiveManager.getParTimeSeconds() - objectiveManager.getElapsedTime();
             Color deltaColor = delta >= 0 ? new Color(148, 218, 156) : new Color(232, 152, 144);
             g2d.setColor(deltaColor);
             String deltaText = "Par Delta: " + (delta >= 0 ? "+" : "-") + String.format("%.1fs", Math.abs(delta));
-            g2d.drawString(deltaText, 28, 198);
+            g2d.drawString(deltaText, contentX, y);
+            y += 20;
             g2d.setColor(new Color(192, 178, 166));
         }
 
         if (multiplayerActive) {
-            g2d.drawString("Link: " + describeLink(), 28, 198);
+            g2d.drawString("Link: " + describeLink(), contentX, y);
+            y += 20;
             String sharedLabel = "Shared Respawn: " + (sharedRespawnsEnabled && remoteSharedRespawns ? "On" : sharedRespawnsEnabled ? "Partner off" : "Off");
-            g2d.drawString(sharedLabel, 28, 218);
+            g2d.drawString(sharedLabel, contentX, y);
+            y += 20;
         }
 
         double orbProgress = orbs.isEmpty() ? 1.0 : collected / (double) orbs.size();
-        drawProgressBar(g2d, 28, 236, 210, 14, orbProgress, new Color(104, 214, 178), "Gate unlock");
+        drawProgressBar(g2d, contentX, y, 190, 14, orbProgress, new Color(104, 214, 178), "Gate unlock");
+        y += 28;
 
         double par = objectiveManager.getParTimeSeconds();
         if (par > 0) {
             double elapsed = objectiveManager.getElapsedTime();
             double parProgress = Math.min(1.0, elapsed / par);
             Color parColor = elapsed <= par ? new Color(182, 210, 110) : new Color(196, 86, 102);
-            drawProgressBar(g2d, 28, 260, 210, 14, parProgress, parColor, "Par pace");
+            drawProgressBar(g2d, contentX, y, 190, 14, parProgress, parColor, "Par pace");
+            y += 28;
         }
 
         if (!multiplayerActive) {
-            int checklistY = 286;
-            drawChallengeLine(g2d, 28, checklistY, "All orbs", collected == orbs.size());
-            drawChallengeLine(g2d, 28, checklistY + 18, "Beat par", objectiveManager.getParTimeSeconds() <= 0 || objectiveManager.getElapsedTime() <= objectiveManager.getParTimeSeconds());
-            drawChallengeLine(g2d, 28, checklistY + 36, "Deathless", deathlessRun && deathCount == 0);
-            drawChallengeLine(g2d, 28, checklistY + 54, "Streak: x" + Math.max(1, orbStreak), orbStreak >= 2);
+            int challengePanelY = panelY + panelHeight + 10;
+            int challengeHeight = 122;
+            g2d.setColor(new Color(10, 8, 18, 190));
+            g2d.fillRoundRect(panelX, challengePanelY, panelWidth, challengeHeight, 14, 14);
+            g2d.setColor(new Color(18, 12, 30, 140));
+            g2d.fillRoundRect(panelX + 6, challengePanelY + 8, panelWidth - 12, challengeHeight - 14, 12, 12);
+            g2d.setColor(panelAccent);
+            g2d.drawRoundRect(panelX, challengePanelY, panelWidth, challengeHeight, 14, 14);
+            g2d.drawRoundRect(panelX + 6, challengePanelY + 8, panelWidth - 12, challengeHeight - 14, 12, 12);
 
-            String broadcast = getSoloBroadcasts()[radioIndex % getSoloBroadcasts().length];
+            g2d.setColor(new Color(214, 206, 192));
+            g2d.setFont(new Font("Consolas", Font.BOLD, 16));
+            g2d.drawString("Challenges", contentX, challengePanelY + 24);
+            g2d.setFont(new Font("Consolas", Font.PLAIN, 15));
+            g2d.setColor(new Color(192, 178, 166));
+
+            int checklistY = challengePanelY + 42;
+            drawChallengeLine(g2d, contentX, checklistY, "All orbs", collected == orbs.size());
+            drawChallengeLine(g2d, contentX, checklistY + 18, "Beat par", objectiveManager.getParTimeSeconds() <= 0 || objectiveManager.getElapsedTime() <= objectiveManager.getParTimeSeconds());
+            drawChallengeLine(g2d, contentX, checklistY + 36, "Deathless", deathlessRun && deathCount == 0);
+            drawChallengeLine(g2d, contentX, checklistY + 54, "Streak: x" + Math.max(1, orbStreak), orbStreak >= 2);
+
+            String broadcast = "Broadcast: " + getSoloBroadcasts()[radioIndex % getSoloBroadcasts().length];
             g2d.setFont(new Font("Consolas", Font.PLAIN, 14));
             g2d.setColor(new Color(172, 202, 218));
-            g2d.drawString("Broadcast: " + broadcast, 28, checklistY + 80);
+            drawWrappedString(g2d, broadcast, contentX, checklistY + 78, panelWidth - 24, 16);
             g2d.setFont(new Font("Consolas", Font.PLAIN, 16));
             g2d.setColor(new Color(192, 178, 166));
         }
@@ -1742,6 +1792,25 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.drawString(label, x + 16, y);
     }
 
+    private void drawWrappedString(Graphics2D g2d, String text, int x, int y, int maxWidth, int lineHeight) {
+        String[] words = text.split(" ");
+        StringBuilder line = new StringBuilder();
+        int drawY = y;
+        for (String word : words) {
+            String candidate = line.length() == 0 ? word : line + " " + word;
+            if (g2d.getFontMetrics().stringWidth(candidate) > maxWidth) {
+                g2d.drawString(line.toString(), x, drawY);
+                line = new StringBuilder(word);
+                drawY += lineHeight;
+            } else {
+                line = new StringBuilder(candidate);
+            }
+        }
+        if (line.length() > 0) {
+            g2d.drawString(line.toString(), x, drawY);
+        }
+    }
+
     private void drawGravityCompass(Graphics2D g2d) {
         int size = 70;
         int x = BASE_WIDTH - size - 24;
@@ -1795,15 +1864,29 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private void drawPauseMenu(Graphics2D g2d) {
-        g2d.setColor(new Color(0, 0, 0, 140));
+        g2d.setColor(new Color(0, 0, 0, 160));
         g2d.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+
+        int modalWidth = 320;
+        int modalHeight = 220;
+        int modalX = (BASE_WIDTH - modalWidth) / 2;
+        int modalY = 140;
+        g2d.setColor(new Color(12, 8, 16, 220));
+        g2d.fillRoundRect(modalX, modalY, modalWidth, modalHeight, 18, 18);
+        g2d.setColor(new Color(56, 36, 78, 180));
+        g2d.fillRoundRect(modalX + 8, modalY + 8, modalWidth - 16, modalHeight - 16, 14, 14);
+        g2d.setColor(new Color(198, 112, 230, 180));
+        g2d.setStroke(new BasicStroke(2.2f));
+        g2d.drawRoundRect(modalX, modalY, modalWidth, modalHeight, 18, 18);
+
         g2d.setFont(new Font("Consolas", Font.BOLD, 24));
         g2d.setColor(new Color(218, 208, 196));
-        g2d.drawString("Paused", BASE_WIDTH / 2 - 40, 160);
+        int titleWidth = g2d.getFontMetrics().stringWidth("Paused");
+        g2d.drawString("Paused", (BASE_WIDTH - titleWidth) / 2, modalY + 42);
 
         g2d.setFont(new Font("Consolas", Font.PLAIN, 18));
         String[] options = new String[]{"Resume", "Restart Level", "Settings", "Save & Quit"};
-        int startY = 210;
+        int startY = modalY + 80;
         for (int i = 0; i < options.length; i++) {
             g2d.setColor(pauseMenuIndex == i ? new Color(198, 112, 230) : new Color(218, 208, 196));
             int width = g2d.getFontMetrics().stringWidth(options[i]);
