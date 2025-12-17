@@ -1740,10 +1740,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             g2d.setColor(new Color(8, 6, 16, 190));
             int width = g2d.getFontMetrics().stringWidth(toastMessage);
             int x = (BASE_WIDTH - width) / 2 - 12;
-            int y = 70;
-            g2d.fillRoundRect(x, y - 24, width + 24, 40, 12, 12);
+            int toastY = 70;
+            g2d.fillRoundRect(x, toastY - 24, width + 24, 40, 12, 12);
             g2d.setColor(toastColor);
-            g2d.drawString(toastMessage, (BASE_WIDTH - width) / 2, y);
+            g2d.drawString(toastMessage, (BASE_WIDTH - width) / 2, toastY);
         }
 
         drawGravityCompass(g2d);
