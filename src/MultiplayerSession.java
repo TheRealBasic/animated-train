@@ -92,7 +92,7 @@ public class MultiplayerSession {
                 while ((line = reader.readLine()) != null) {
                     RemoteState parsed = RemoteState.parse(line);
                     if (parsed != null) {
-                        latestState.set(parsed);
+                        latestState.getAndUpdate(current -> current.merge(parsed));
                     }
                 }
             } catch (IOException ignored) {
@@ -166,6 +166,25 @@ public class MultiplayerSession {
                              boolean startSignal, boolean respawnSignal) {
         public RemoteState() {
             this(null, null, null, null, null, null, null, null, false, false);
+        }
+
+        private RemoteState merge(RemoteState update) {
+            return new RemoteState(
+                    coalesce(update.x, x),
+                    coalesce(update.y, y),
+                    coalesce(update.gravity, gravity),
+                    coalesce(update.orbMask, orbMask),
+                    coalesce(update.levelIndex, levelIndex),
+                    coalesce(update.paletteIndex, paletteIndex),
+                    coalesce(update.ready, ready),
+                    coalesce(update.sharedRespawns, sharedRespawns),
+                    startSignal || update.startSignal,
+                    respawnSignal || update.respawnSignal
+            );
+        }
+
+        private static <T> T coalesce(T update, T existing) {
+            return update != null ? update : existing;
         }
 
         private static RemoteState parse(String line) {
