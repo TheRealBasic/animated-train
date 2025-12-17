@@ -92,7 +92,7 @@ public class MultiplayerSession {
                 while ((line = reader.readLine()) != null) {
                     RemoteState parsed = RemoteState.parse(line);
                     if (parsed != null) {
-                        latestState.set(parsed);
+                        latestState.getAndUpdate(current -> current.merge(parsed));
                     }
                 }
             } catch (IOException ignored) {
@@ -168,11 +168,36 @@ public class MultiplayerSession {
             this(null, null, null, null, null, null, null, null, false, false);
         }
 
+        private RemoteState merge(RemoteState update) {
+            return new RemoteState(
+                    coalesce(update.x, x),
+                    coalesce(update.y, y),
+                    coalesce(update.gravity, gravity),
+                    coalesce(update.orbMask, orbMask),
+                    coalesce(update.levelIndex, levelIndex),
+                    coalesce(update.paletteIndex, paletteIndex),
+                    coalesce(update.ready, ready),
+                    coalesce(update.sharedRespawns, sharedRespawns),
+                    startSignal || update.startSignal,
+                    respawnSignal || update.respawnSignal
+            );
+        }
+
+        private static <T> T coalesce(T update, T existing) {
+            return update != null ? update : existing;
+        }
+
         private static RemoteState parse(String line) {
             if (line == null || line.isBlank()) {
                 return null;
             }
             String[] parts = line.split(" ");
+            if ("START".equals(parts[0])) {
+                return new RemoteState(null, null, null, null, null, null, null, null, true, false);
+            }
+            if ("RESPAWN".equals(parts[0])) {
+                return new RemoteState(null, null, null, null, null, null, null, null, false, true);
+            }
             if (parts.length < 2) {
                 return null;
             }
@@ -197,12 +222,6 @@ public class MultiplayerSession {
                 } catch (NumberFormatException ex) {
                     return null;
                 }
-            }
-            if ("START".equals(parts[0])) {
-                return new RemoteState(null, null, null, null, null, null, null, null, true, false);
-            }
-            if ("RESPAWN".equals(parts[0])) {
-                return new RemoteState(null, null, null, null, null, null, null, null, false, true);
             }
             return null;
         }
