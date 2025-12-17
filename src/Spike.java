@@ -15,6 +15,22 @@ public class Spike {
         this.height = height;
     }
 
+    public double getX() {
+        return x;
+    }
+
+    public double getY() {
+        return y;
+    }
+
+    public int getWidth() {
+        return width;
+    }
+
+    public int getHeight() {
+        return height;
+    }
+
     public boolean intersects(Player player) {
         double px = player.getX();
         double py = player.getY();

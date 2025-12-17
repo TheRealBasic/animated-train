@@ -40,6 +40,14 @@ public class FluxOrb {
         }
     }
 
+    public Point2D.Double getPosition() {
+        return position;
+    }
+
+    public int getRadius() {
+        return radius;
+    }
+
     public boolean checkCollected(Player player) {
         if (collected) {
             return false;
