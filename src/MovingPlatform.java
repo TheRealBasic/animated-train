@@ -5,6 +5,8 @@ public class MovingPlatform extends Platform {
     private final double endY;
     private final double speed;
     private boolean forward = true;
+    private double lastX;
+    private double lastY;
 
     public MovingPlatform(double x, double y, int width, int height, double endX, double endY, double speed) {
         super(x, y, width, height);
@@ -13,9 +15,13 @@ public class MovingPlatform extends Platform {
         this.endX = endX;
         this.endY = endY;
         this.speed = speed;
+        this.lastX = x;
+        this.lastY = y;
     }
 
     public void update(double dt) {
+        lastX = getX();
+        lastY = getY();
         double targetX = forward ? endX : startX;
         double targetY = forward ? endY : startY;
         double dx = targetX - getX();
@@ -32,5 +38,13 @@ public class MovingPlatform extends Platform {
         double nx = getX() + (dx / distance) * move;
         double ny = getY() + (dy / distance) * move;
         setPosition(nx, ny);
+    }
+
+    public double getDeltaX() {
+        return getX() - lastX;
+    }
+
+    public double getDeltaY() {
+        return getY() - lastY;
     }
 }
