@@ -2,7 +2,11 @@
 
 A standalone Java 2D platformer built on Swing/Java2D featuring a gravity-warping mechanic. Play solo or link up with a friend over LAN/direct IP to solve cooperative button-door puzzles, collect Flux Orbs, race par times, and clear handcrafted stages with unlockable medals.
 
+An experimental LWJGL 3 stack (window/input/rendering), JOML math, OpenAL audio, and jbox2d physics sandbox is also available via `LwjglGame`, showing how the game could be migrated away from the Swing/Java2D stack.
+
 ## Build and run
+
+### Swing/Java2D build
 
 1. Install a JDK (version 17 or newer recommended).
 2. Compile the sources into the `out` directory:
@@ -24,6 +28,17 @@ A standalone Java 2D platformer built on Swing/Java2D featuring a gravity-warpin
    ```
 
 No external libraries are required—the project uses only the Java standard library and ships its own assets under `assets/`.
+
+### LWJGL/JOML/OpenAL/jbox2d sandbox
+
+1. Ensure Maven can download dependencies (the LWJGL 3 runtime uses native libraries).
+2. Build and run the standalone sandbox entry point:
+
+   ```bash
+   mvn -q exec:java -Dexec.mainClass=LwjglGame
+   ```
+
+   The window demonstrates LWJGL 3 for windowing/input/rendering, JOML vectors, OpenAL sound playback on jumps, and a jbox2d-driven character controller/ground plane.
 
 ## Controls
 
