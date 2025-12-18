@@ -9,6 +9,8 @@ import java.awt.Composite;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.GraphicsDevice;
+import java.awt.GraphicsEnvironment;
 import java.awt.GradientPaint;
 import java.awt.RenderingHints;
 import java.awt.Stroke;
@@ -179,7 +181,11 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     public GamePanel() {
-        settings = Settings.load();
+        this(Settings.load());
+    }
+
+    public GamePanel(Settings providedSettings) {
+        settings = providedSettings != null ? providedSettings : Settings.load();
         SoundManager.setMasterVolume(settings.getMasterVolume() / 100.0);
         sharedRespawnsEnabled = settings.isSharedRespawns();
         localPaletteIndex = settings.getSuitPalette() % SUIT_PALETTES.length;
@@ -1685,6 +1691,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         List<String> lines = new ArrayList<>();
         lines.add("Master Volume: " + settings.getMasterVolume());
         lines.add("Screen Scale: " + String.format("%.1fx", settings.getScreenScale()));
+        lines.add("Fullscreen: " + (settings.isFullscreenEnabled() ? "On" : "Off"));
         lines.add("Show Debug HUD: " + (settings.isShowDebugHud() ? "On" : "Off"));
         lines.add("Show FPS Counter: " + (settings.isShowFps() ? "On" : "Off"));
         lines.add("Movement Effects: " + (settings.isMovementEffectsEnabled() ? "On" : "Off"));
@@ -2293,22 +2300,6 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
     }
 
-    private void drawMatrixRain(Graphics2D g2d) {
-        double stress = Math.max(0.2, getScreenStress());
-        Random rng = new Random(11L + (long) (matrixGlitchTimer * 1200));
-        g2d.setFont(new Font("Consolas", Font.PLAIN, 14));
-        for (int x = 0; x < BASE_WIDTH; x += 18) {
-            double speed = 40 + rng.nextDouble() * 120 * (0.6 + stress);
-            double offset = (matrixGlitchTimer * speed + rng.nextInt(BASE_HEIGHT)) % (BASE_HEIGHT + 60) - 60;
-            for (int y = (int) offset; y < BASE_HEIGHT; y += 20) {
-                char c = rng.nextBoolean() ? '0' : '1';
-                int alpha = (int) Math.min(196, 64 + (BASE_HEIGHT - y) * (0.2 + stress));
-                g2d.setColor(new Color(94, 232, 168, Math.max(10, alpha)));
-                g2d.drawString(Character.toString(c), x, y);
-            }
-        }
-    }
-
     private void drawFinalEscapeMessage(Graphics2D g2d) {
         g2d.setFont(new Font("Consolas", Font.PLAIN, 18));
         g2d.setColor(new Color(148, 228, 186));
@@ -2342,33 +2333,6 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 g2d.setColor(new Color(94, 232, 168, Math.max(10, alpha)));
                 g2d.drawString(Character.toString(c), x, y);
             }
-        }
-    }
-
-    private void drawFinalEscapeScreen(Graphics2D g2d) {
-        g2d.setColor(Color.BLACK);
-        g2d.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
-
-        if (levelCompleteElapsed < 0.9) {
-            Composite old = g2d.getComposite();
-            g2d.setComposite(AlphaComposite.SrcOver.derive(0.35f));
-            drawMatrixRain(g2d);
-            g2d.setComposite(old);
-        }
-
-        String rendered = FINAL_ESCAPE_MESSAGE.substring(0, Math.min(finalMessageCharsRevealed, FINAL_ESCAPE_MESSAGE.length()));
-        boolean showCursor = finalMessageCharsRevealed < FINAL_ESCAPE_MESSAGE.length() || ((int) (levelCompleteElapsed * 2) % 2 == 0);
-        String cursor = showCursor ? "_" : "";
-
-        g2d.setFont(new Font("Consolas", Font.BOLD, 24));
-        g2d.setColor(new Color(180, 244, 196));
-        int width = g2d.getFontMetrics().stringWidth(rendered + cursor);
-        g2d.drawString(rendered + cursor, (BASE_WIDTH - width) / 2, BASE_HEIGHT / 2);
-
-        if (finalShutdownTriggered) {
-            float fade = (float) Math.min(1.0, finalShutdownTimer / 0.6);
-            g2d.setColor(new Color(0, 0, 0, (int) (fade * 255)));
-            g2d.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
         }
     }
 
@@ -2413,6 +2377,40 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             g2d.setColor(new Color(0, 0, 0, (int) (fade * 255)));
             g2d.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
         }
+    }
+
+    public void applyFullscreenPreference() {
+        java.awt.Window window = SwingUtilities.getWindowAncestor(this);
+        if (!(window instanceof javax.swing.JFrame)) {
+            return;
+        }
+
+        javax.swing.JFrame frame = (javax.swing.JFrame) window;
+        GraphicsDevice device = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice();
+        boolean wantFullscreen = settings.isFullscreenEnabled();
+
+        if (!wantFullscreen && device.getFullScreenWindow() == frame) {
+            device.setFullScreenWindow(null);
+        }
+
+        frame.dispose();
+        frame.setUndecorated(wantFullscreen);
+
+        if (wantFullscreen) {
+            frame.setVisible(true);
+            if (device.isFullScreenSupported()) {
+                device.setFullScreenWindow(frame);
+            } else {
+                frame.setExtendedState(javax.swing.JFrame.MAXIMIZED_BOTH);
+            }
+        } else {
+            frame.setExtendedState(javax.swing.JFrame.NORMAL);
+            frame.pack();
+            frame.setLocationRelativeTo(null);
+            frame.setVisible(true);
+        }
+
+        requestFocusInWindow();
     }
 
     private void drawControlHint(Graphics2D g2d, String hint) {
@@ -2527,12 +2525,13 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             return;
         }
         if (gameState == GameState.SETTINGS) {
-            handleMenuNavigation(e, 12, this::handleSettingsSelect);
+            handleMenuNavigation(e, getSettingsMenuItemCount(), this::handleSettingsSelect);
             if (e.getKeyCode() == KeyEvent.VK_LEFT) {
                 adjustSetting(-1);
             } else if (e.getKeyCode() == KeyEvent.VK_RIGHT) {
                 adjustSetting(1);
             } else if (e.getKeyCode() == KeyEvent.VK_ESCAPE) {
+                resetBindingState();
                 gameState = previousStateBeforeSettings;
             }
             return;
@@ -2856,57 +2855,61 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 scale = settings.getScreenScale();
                 setPreferredSize(new Dimension((int) (BASE_WIDTH * scale), (int) (BASE_HEIGHT * scale)));
                 revalidate();
-                if (SwingUtilities.getWindowAncestor(this) != null) {
-                    SwingUtilities.getWindowAncestor(this).pack();
-                }
+                refreshWindowSize();
                 settings.save();
                 break;
             case 2:
+                settings.setFullscreenEnabled(!settings.isFullscreenEnabled());
+                settings.save();
+                applyFullscreenPreference();
+                break;
+            case 3:
                 settings.setShowDebugHud(!settings.isShowDebugHud());
                 settings.save();
                 break;
-            case 3:
+            case 4:
                 settings.setShowFps(!settings.isShowFps());
                 settings.save();
                 break;
-            case 4:
+            case 5:
                 settings.setMovementEffectsEnabled(!settings.isMovementEffectsEnabled());
                 settings.save();
                 break;
-            case 5:
+            case 6:
                 settings.setJumpEffectsEnabled(!settings.isJumpEffectsEnabled());
                 settings.save();
                 break;
-            case 6:
+            case 7:
                 settings.setDeathEffectsEnabled(!settings.isDeathEffectsEnabled());
                 settings.save();
                 break;
-            case 7:
+            case 8:
                 settings.setScreenDistortionEnabled(!settings.isScreenDistortionEnabled());
                 settings.save();
                 break;
-            case 8:
+            case 9:
                 settings.setScreenOverlayEnabled(!settings.isScreenOverlayEnabled());
                 settings.save();
                 break;
-            case 9:
+            case 10:
                 settings.setScreenBezelEnabled(!settings.isScreenBezelEnabled());
                 settings.save();
                 break;
-            case 10:
+            case 11:
                 waitingForBinding = true;
                 bindingTarget = "Left";
                 break;
-            case 11:
+            case 12:
                 waitingForBinding = true;
                 bindingTarget = "Right";
                 break;
-            case 12:
+            case 13:
                 waitingForBinding = true;
                 bindingTarget = "Jump";
                 break;
-            case 13:
+            case 14:
                 settings.save();
+                resetBindingState();
                 gameState = previousStateBeforeSettings;
                 break;
         }
@@ -2925,12 +2928,26 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         settings.save();
     }
 
-    private void handleSettingsSelect() {
-        if (settingsMenuIndex == 11) {
-            gameState = previousStateBeforeSettings;
-        } else {
-            adjustSetting(0);
+    private void refreshWindowSize() {
+        java.awt.Window window = SwingUtilities.getWindowAncestor(this);
+        if (window instanceof javax.swing.JFrame && !settings.isFullscreenEnabled()) {
+            javax.swing.JFrame frame = (javax.swing.JFrame) window;
+            frame.pack();
+            frame.setLocationRelativeTo(null);
         }
+    }
+
+    private void resetBindingState() {
+        waitingForBinding = false;
+        bindingTarget = "";
+    }
+
+    private int getSettingsMenuItemCount() {
+        return 15;
+    }
+
+    private void handleSettingsSelect() {
+        adjustSetting(0);
     }
 
     @Override

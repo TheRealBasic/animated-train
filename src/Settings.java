@@ -18,6 +18,7 @@ public class Settings {
     private boolean screenBezel = true;
     private boolean sharedRespawns = true;
     private int suitPalette = 0;
+    private boolean fullscreen = false;
     private int keyLeft = java.awt.event.KeyEvent.VK_A;
     private int keyRight = java.awt.event.KeyEvent.VK_D;
     private int keyJump = java.awt.event.KeyEvent.VK_SPACE;
@@ -54,6 +55,7 @@ public class Settings {
             }
             settings.sharedRespawns = Boolean.parseBoolean(props.getProperty("sharedRespawns", "true"));
             settings.suitPalette = Integer.parseInt(props.getProperty("suitPalette", "0"));
+            settings.fullscreen = Boolean.parseBoolean(props.getProperty("fullscreen", "false"));
             settings.keyLeft = Integer.parseInt(props.getProperty("keyLeft", Integer.toString(settings.keyLeft)));
             settings.keyRight = Integer.parseInt(props.getProperty("keyRight", Integer.toString(settings.keyRight)));
             settings.keyJump = Integer.parseInt(props.getProperty("keyJump", Integer.toString(settings.keyJump)));
@@ -83,6 +85,7 @@ public class Settings {
         props.setProperty("screenBezel", Boolean.toString(screenBezel));
         props.setProperty("sharedRespawns", Boolean.toString(sharedRespawns));
         props.setProperty("suitPalette", Integer.toString(suitPalette));
+        props.setProperty("fullscreen", Boolean.toString(fullscreen));
         props.setProperty("keyLeft", Integer.toString(keyLeft));
         props.setProperty("keyRight", Integer.toString(keyRight));
         props.setProperty("keyJump", Integer.toString(keyJump));
@@ -193,6 +196,14 @@ public class Settings {
 
     public void setSuitPalette(int suitPalette) {
         this.suitPalette = Math.max(0, suitPalette);
+    }
+
+    public boolean isFullscreenEnabled() {
+        return fullscreen;
+    }
+
+    public void setFullscreenEnabled(boolean fullscreen) {
+        this.fullscreen = fullscreen;
     }
 
     public int getKeyLeft() {
