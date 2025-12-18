@@ -1,7 +1,6 @@
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.BasicStroke;
-import java.awt.GradientPaint;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.Rectangle2D;
 import java.util.List;
@@ -19,6 +18,9 @@ public class Player {
     private double velX;
     private double velY;
     private boolean grounded;
+    private double animationTimer;
+    private double walkCycle;
+    private boolean facingRight = true;
 
     public Player(double x, double y, int width, int height) {
         this.x = x;
@@ -170,54 +172,100 @@ public class Player {
         setVelocity(0, 0);
     }
 
-    public void draw(Graphics2D g2d, GravityDir gravityDir) {
-        draw(g2d, gravityDir, new Color(156, 102, 212), new Color(86, 46, 124));
-    }
-
-    public void draw(Graphics2D g2d, GravityDir gravityDir, Color top, Color bottom) {
+    public void draw(Graphics2D g2d, GravityDir gravityDir, Color suitPrimary, Color suitSecondary, Color visorColor) {
         AffineTransform old = g2d.getTransform();
         java.awt.Stroke oldStroke = g2d.getStroke();
         double centerX = x + width / 2.0;
         double centerY = y + height / 2.0;
-        double angle = 0;
-        switch (gravityDir) {
-            case DOWN:
-                angle = 0;
-                break;
-            case UP:
-                angle = Math.PI;
-                break;
-            case LEFT:
-                angle = -Math.PI / 2.0;
-                break;
-            case RIGHT:
-                angle = Math.PI / 2.0;
-                break;
-        }
+        double angle = switch (gravityDir) {
+            case DOWN -> 0;
+            case UP -> Math.PI;
+            case LEFT -> -Math.PI / 2.0;
+            case RIGHT -> Math.PI / 2.0;
+        };
         g2d.rotate(angle, centerX, centerY);
-        g2d.setColor(new Color(8, 6, 16, 170));
-        g2d.fillRect((int) x + 2, (int) y + 2, width, height);
 
-        g2d.setColor(top);
-        g2d.fillRect((int) x, (int) y, width, height);
-        g2d.setColor(bottom);
-        g2d.fillRect((int) x, (int) y + height / 2, width, height / 2);
+        double bodyX = x;
+        double bodyY = y;
+        double limbThickness = Math.max(4, width / 5.0);
+        double torsoWidth = width - limbThickness;
+        double torsoHeight = height - 12;
+        double headSize = 14;
+        double headX = bodyX + (width - headSize) / 2.0;
+        double headY = bodyY - 4;
 
-        g2d.setColor(new Color(18, 10, 26));
-        g2d.fillRect((int) x + 4, (int) y + height / 3, width - 8, height / 3);
-        g2d.setColor(new Color(198, 150, 72));
-        g2d.fillRect((int) x + 6, (int) y + height / 3 + 2, width - 12, height / 4);
-
-        g2d.setColor(new Color(186, 170, 204, 140));
-        for (int px = (int) x + 2; px < x + width - 2; px += 4) {
-            g2d.fillRect(px, (int) y + 3, 2, 2);
+        double walkSwing = Math.sin(walkCycle) * 16;
+        double armSwing = Math.sin(walkCycle + Math.PI / 2) * 10;
+        if (!grounded) {
+            walkSwing = 8;
+            armSwing = -12;
         }
+        double idleBob = Math.sin(animationTimer * 2.4) * (grounded ? 1.2 : 0.2);
 
-        g2d.setColor(new Color(22, 12, 34));
-        g2d.drawRect((int) x, (int) y, width, height);
+        double facing = facingRight ? 1 : -1;
+
+        g2d.setColor(new Color(8, 6, 16, 130));
+        g2d.fillRoundRect((int) bodyX + 2, (int) bodyY + 6, (int) torsoWidth, (int) torsoHeight, 6, 6);
+
+        g2d.translate(0, idleBob);
+
+        drawLimb(g2d, bodyX + 4, bodyY + torsoHeight - 2, limbThickness, 14, -walkSwing * 0.4, suitSecondary);
+        drawLimb(g2d, bodyX + torsoWidth - limbThickness + 2, bodyY + torsoHeight - 2, limbThickness, 14, walkSwing * 0.4, suitSecondary);
+        drawLimb(g2d, bodyX + 2, bodyY + 12, limbThickness - 1, 12, -armSwing * 0.5, suitPrimary.darker());
+        drawLimb(g2d, bodyX + torsoWidth - limbThickness + 3, bodyY + 12, limbThickness - 1, 12, armSwing * 0.5, suitPrimary.darker());
+
+        g2d.setColor(suitPrimary);
+        g2d.fillRoundRect((int) bodyX + 4, (int) bodyY + 8, (int) torsoWidth - 4, (int) torsoHeight - 6, 8, 10);
+        g2d.setColor(suitSecondary);
+        g2d.fillRoundRect((int) bodyX + 4, (int) (bodyY + torsoHeight / 2.0 + 2), (int) torsoWidth - 4, (int) (torsoHeight / 2.0 - 4), 8, 8);
+
+        g2d.setColor(new Color(30, 18, 42, 180));
+        g2d.setStroke(new BasicStroke(1.8f));
+        g2d.drawRoundRect((int) bodyX + 4, (int) bodyY + 8, (int) torsoWidth - 4, (int) torsoHeight - 6, 8, 10);
+
+        g2d.setColor(new Color(234, 232, 232, 180));
+        g2d.fillRoundRect((int) bodyX + (int) torsoWidth / 2 - 6, (int) bodyY + 14, 12, 6, 6, 6);
+        g2d.setColor(new Color(184, 214, 214, 160));
+        g2d.fillRoundRect((int) bodyX + (int) torsoWidth / 2 - 4, (int) bodyY + 13, 8, 4, 4, 4);
+
+        AffineTransform faceTransform = g2d.getTransform();
+        g2d.translate(facing > 0 ? 0 : torsoWidth, 0);
+        g2d.scale(facing, 1);
+        g2d.setColor(new Color(42, 30, 54));
+        g2d.fillOval((int) headX, (int) headY, (int) headSize, (int) headSize);
+        g2d.setColor(visorColor);
+        g2d.fillRoundRect((int) headX + 2, (int) headY + 4, (int) headSize - 4, 10, 6, 6);
+        g2d.setColor(new Color(255, 255, 255, 160));
+        g2d.fillRoundRect((int) headX + 4, (int) headY + 5, 8, 4, 4, 4);
+        g2d.setTransform(faceTransform);
 
         g2d.setStroke(oldStroke);
         g2d.setTransform(old);
+    }
+
+    private void drawLimb(Graphics2D g2d, double baseX, double baseY, double thickness, double length, double angleDeg, Color color) {
+        AffineTransform old = g2d.getTransform();
+        g2d.translate(baseX, baseY);
+        g2d.rotate(Math.toRadians(angleDeg));
+        g2d.setColor(color);
+        g2d.fillRoundRect(0, 0, (int) thickness, (int) length, 4, 4);
+        g2d.setTransform(old);
+    }
+
+    public void updateAnimation(double dt, GravityDir gravityDir, double tangentialVelocity, boolean groundedState) {
+        grounded = groundedState;
+        animationTimer += dt;
+        double speed = Math.abs(tangentialVelocity);
+        if (speed > 0.15) {
+            walkCycle += dt * (4 + speed * 0.6);
+            if (tangentialVelocity > 0) {
+                facingRight = true;
+            } else if (tangentialVelocity < 0) {
+                facingRight = false;
+            }
+        } else {
+            walkCycle += dt * 2.2;
+        }
     }
 
     public double getX() {

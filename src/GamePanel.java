@@ -47,6 +47,13 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             {new Color(188, 124, 208), new Color(108, 62, 148)},
             {new Color(214, 104, 116), new Color(152, 48, 76)}
     };
+    private static final Color[] VISOR_COLORS = new Color[]{
+            new Color(150, 220, 238),
+            new Color(210, 210, 230),
+            new Color(132, 222, 206),
+            new Color(238, 170, 92),
+            new Color(210, 158, 236)
+    };
     private static final String[] SOLO_BROADCASTS = new String[]{
             "Signal bleed: Someone woke up inside the CRT. It whispers your name.",
             "Telemetry: Static forms a face when you stop. It wants out.",
@@ -175,6 +182,11 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private boolean calmEffects;
     private boolean muted;
     private boolean quickRecoverArmed;
+    private int localVisorIndex;
+    private int remoteVisorIndex;
+    private int customizeMenuIndex;
+    private final Player customizePreview;
+    private double customizePreviewTimer;
 
     private enum GameState {
         SPLASH,
@@ -182,6 +194,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         MULTIPLAYER_MENU,
         MULTIPLAYER_WAIT,
         SETTINGS,
+        CUSTOMIZE,
         LEVEL_SELECT,
         LOADING,
         IN_GAME,
@@ -202,6 +215,8 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         if (localPaletteIndex < 0) {
             localPaletteIndex = 0;
         }
+        localVisorIndex = clampVisorIndex(settings.getVisorColor());
+        remoteVisorIndex = (localVisorIndex + 1) % VISOR_COLORS.length;
         remotePaletteIndex = (localPaletteIndex + 1) % SUIT_PALETTES.length;
         timeSinceRemote = 999;
         scale = settings.getScreenScale();
@@ -228,6 +243,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         gravityCooldownRemaining = 0;
         player = new Player(0, 0, PLAYER_W, PLAYER_H);
         partner = new Player(0, 0, PLAYER_W, PLAYER_H);
+        customizePreview = new Player(BASE_WIDTH / 2.0 - 12, BASE_HEIGHT / 2.0, PLAYER_W, PLAYER_H);
 
         levelManager = new LevelManager();
         saveData = SaveGame.load(levelManager.getLevelCount());
@@ -355,6 +371,13 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             return;
         }
 
+        if (gameState == GameState.CUSTOMIZE) {
+            updateCustomizePreview(dt);
+            updateEffects(dt);
+            repaint();
+            return;
+        }
+
         if (gameState == GameState.IN_GAME) {
             updateGravityCooldown(dt);
             updateAssistTimers(dt);
@@ -369,9 +392,13 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 lastSafeGroundedPos.put(gravityDir, new Point2D.Double(player.getX(), player.getY()));
             }
             updateMovementEffects(dt);
+            double playerTangential = gravityDir.isVertical() ? player.getVelX() : player.getVelY();
+            player.updateAnimation(dt, gravityDir, playerTangential, player.isGrounded());
             updateCoopButtons();
             collectOrbs(player, true);
             if (multiplayerActive) {
+                double partnerTangential = partnerGravity.isVertical() ? partner.getVelX() : partner.getVelY();
+                partner.updateAnimation(dt, partnerGravity, partnerTangential, true);
                 collectOrbs(partner, false);
             }
             handleKillPlane();
@@ -402,7 +429,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         MultiplayerSession.RemoteState remote = session.pollRemoteState();
         applyRemoteState(remote);
         advertiseLobbyLevel();
-        session.sendState(player.getX(), player.getY(), gravityDir, localOrbMask, localPaletteIndex, localReady, sharedRespawnsEnabled);
+        session.sendState(player.getX(), player.getY(), gravityDir, localOrbMask, localPaletteIndex, localVisorIndex, localReady, sharedRespawnsEnabled);
         if (multiplayerHost && localReady && remoteReady && !waitingForLevelSync) {
             beginMultiplayerRun();
         }
@@ -606,13 +633,14 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
         MultiplayerSession.RemoteState remote = session.pollRemoteState();
         applyRemoteState(remote);
-        session.sendState(player.getX(), player.getY(), gravityDir, localOrbMask, localPaletteIndex, false, sharedRespawnsEnabled);
+        session.sendState(player.getX(), player.getY(), gravityDir, localOrbMask, localPaletteIndex, localVisorIndex, false, sharedRespawnsEnabled);
     }
 
     private void applyRemoteState(MultiplayerSession.RemoteState remote) {
         if (remote == null) {
             return;
         }
+        double lastRemoteInterval = Math.min(0.5, Math.max(0.016, timeSinceRemote));
         timeSinceRemote = 0;
         if (remote.levelIndex() != null) {
             int levelCount = Math.max(1, getMultiplayerLevelCount());
@@ -622,6 +650,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
         if (remote.paletteIndex() != null) {
             remotePaletteIndex = clampPaletteIndex(remote.paletteIndex());
+        }
+        if (remote.visorIndex() != null) {
+            remoteVisorIndex = clampVisorIndex(remote.visorIndex());
         }
         if (remote.ready() != null) {
             remoteReady = remote.ready();
@@ -633,6 +664,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             remoteOrbMask = remote.orbMask();
         }
         if (remote.x() != null && remote.y() != null && remote.gravity() != null) {
+            double velX = (remote.x() - partner.getX()) / lastRemoteInterval;
+            double velY = (remote.y() - partner.getY()) / lastRemoteInterval;
+            partner.setVelocity(velX, velY);
             partner.setPosition(remote.x(), remote.y());
             partnerGravity = remote.gravity();
         }
@@ -1214,6 +1248,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 drawTitle(g2d, "Settings");
                 drawSettingsMenu(g2d);
                 break;
+            case CUSTOMIZE:
+                drawTitle(g2d, "Character Lab");
+                drawCustomizeMenu(g2d);
+                break;
             case LEVEL_SELECT:
                 drawTitle(g2d, "Level Select");
                 drawLevelSelect(g2d);
@@ -1761,6 +1799,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 "New Game",
                 "Level Select",
                 "Multiplayer",
+                "Character",
                 "Settings",
                 "Credits",
                 "Quit"
@@ -1806,6 +1845,60 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.setColor(new Color(214, 186, 218));
         g2d.drawString("Briefing: Coordinate jumps and flux grabs together.", (BASE_WIDTH - 520) / 2, startY + options.length * 32 + 116);
         drawControlHint(g2d, "Use numbers/dot for IP, arrows to navigate, Enter to select");
+    }
+
+    private void drawCustomizeMenu(Graphics2D g2d) {
+        g2d.setFont(new Font("Consolas", Font.PLAIN, 18));
+        String[] options = new String[]{
+                "Suit Palette",
+                "Visor Color",
+                "Back"
+        };
+        int startY = 220;
+        for (int i = 0; i < options.length; i++) {
+            boolean selected = customizeMenuIndex == i;
+            g2d.setColor(selected ? new Color(198, 112, 230) : new Color(218, 208, 196));
+            String label = options[i];
+            if (i == 0) {
+                label += ": #" + (clampPaletteIndex(localPaletteIndex) + 1);
+            } else if (i == 1) {
+                label += ": #" + (clampVisorIndex(localVisorIndex) + 1);
+            }
+            String text = (selected ? "> " : "  ") + label + (selected ? " <" : "");
+            int width = g2d.getFontMetrics().stringWidth(text);
+            g2d.drawString(text, (BASE_WIDTH - width) / 2, startY + i * 30);
+        }
+
+        g2d.setColor(new Color(98, 80, 112));
+        g2d.drawString("Preview", BASE_WIDTH / 2 - 32, 320);
+        Color[] palette = getPalette(localPaletteIndex);
+        customizePreview.draw(g2d, GravityDir.DOWN, palette[0], palette[1], getVisorColor(localVisorIndex));
+
+        int swatchY = 360;
+        g2d.setColor(new Color(214, 208, 196));
+        g2d.drawString("Palette", BASE_WIDTH / 2 - 90, swatchY - 8);
+        for (int i = 0; i < SUIT_PALETTES.length; i++) {
+            int x = BASE_WIDTH / 2 - 90 + i * 26;
+            g2d.setColor(SUIT_PALETTES[i][0]);
+            g2d.fillRect(x, swatchY, 18, 10);
+            g2d.setColor(SUIT_PALETTES[i][1]);
+            g2d.fillRect(x, swatchY + 10, 18, 10);
+            g2d.setColor(i == clampPaletteIndex(localPaletteIndex) ? new Color(198, 112, 230) : new Color(32, 18, 40));
+            g2d.drawRect(x, swatchY, 18, 20);
+        }
+
+        int visorY = 400;
+        g2d.setColor(new Color(214, 208, 196));
+        g2d.drawString("Visor", BASE_WIDTH / 2 - 90, visorY - 8);
+        for (int i = 0; i < VISOR_COLORS.length; i++) {
+            int x = BASE_WIDTH / 2 - 90 + i * 26;
+            g2d.setColor(VISOR_COLORS[i]);
+            g2d.fillRoundRect(x, visorY, 18, 18, 8, 8);
+            g2d.setColor(i == clampVisorIndex(localVisorIndex) ? new Color(198, 112, 230) : new Color(32, 18, 40));
+            g2d.drawRoundRect(x, visorY, 18, 18, 6, 6);
+        }
+
+        drawControlHint(g2d, "Left/Right to adjust • Enter to select • Esc to exit");
     }
 
     private void drawMultiplayerWait(Graphics2D g2d) {
@@ -1922,10 +2015,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
         drawParticles(g2d);
         Color[] localPalette = getPalette(localPaletteIndex);
-        player.draw(g2d, gravityDir, localPalette[0], localPalette[1]);
+        player.draw(g2d, gravityDir, localPalette[0], localPalette[1], getVisorColor(localVisorIndex));
         if (multiplayerActive) {
             Color[] partnerPalette = getPalette(remotePaletteIndex);
-            partner.draw(g2d, partnerGravity, partnerPalette[0], partnerPalette[1]);
+            partner.draw(g2d, partnerGravity, partnerPalette[0], partnerPalette[1], getVisorColor(remoteVisorIndex));
         } else if (companion != null) {
             companion.draw(g2d);
         }
@@ -1936,6 +2029,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         return SUIT_PALETTES[clamped];
     }
 
+    private Color getVisorColor(int index) {
+        return VISOR_COLORS[clampVisorIndex(index)];
+    }
+
     private int clampPaletteIndex(int index) {
         if (SUIT_PALETTES.length == 0) {
             return 0;
@@ -1943,6 +2040,17 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         int result = index % SUIT_PALETTES.length;
         if (result < 0) {
             result += SUIT_PALETTES.length;
+        }
+        return result;
+    }
+
+    private int clampVisorIndex(int index) {
+        if (VISOR_COLORS.length == 0) {
+            return 0;
+        }
+        int result = index % VISOR_COLORS.length;
+        if (result < 0) {
+            result += VISOR_COLORS.length;
         }
         return result;
     }
@@ -1962,6 +2070,15 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 particles.remove(i);
             }
         }
+    }
+
+    private void updateCustomizePreview(double dt) {
+        customizePreviewTimer += dt;
+        double walkSpeed = Math.sin(customizePreviewTimer * 2.2) * 3.0;
+        double bob = Math.sin(customizePreviewTimer * 3.1) * 2.0;
+        customizePreview.setVelocity(walkSpeed, 0);
+        customizePreview.setPosition(BASE_WIDTH / 2.0 - PLAYER_W / 2.0, BASE_HEIGHT / 2.0 + bob);
+        customizePreview.updateAnimation(dt, GravityDir.DOWN, walkSpeed, true);
     }
 
     private void drawParticles(Graphics2D g2d) {
@@ -2637,7 +2754,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
 
         if (gameState == GameState.MAIN_MENU) {
-            handleMenuNavigation(e, 7, () -> handleMainMenuSelect(mainMenuIndex));
+            handleMenuNavigation(e, 8, () -> handleMainMenuSelect(mainMenuIndex));
             return;
         }
         if (gameState == GameState.MULTIPLAYER_MENU) {
@@ -2696,6 +2813,17 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         if (gameState == GameState.LEVEL_SELECT) {
             handleMenuNavigation(e, levelManager.getLevelCount(), () -> handleLevelSelect(levelSelectIndex));
             if (e.getKeyCode() == KeyEvent.VK_ESCAPE) {
+                gameState = GameState.MAIN_MENU;
+            }
+            return;
+        }
+        if (gameState == GameState.CUSTOMIZE) {
+            handleMenuNavigation(e, 3, () -> handleCustomizeSelect(customizeMenuIndex));
+            if (e.getKeyCode() == KeyEvent.VK_LEFT) {
+                adjustCustomization(-1);
+            } else if (e.getKeyCode() == KeyEvent.VK_RIGHT) {
+                adjustCustomization(1);
+            } else if (e.getKeyCode() == KeyEvent.VK_ESCAPE) {
                 gameState = GameState.MAIN_MENU;
             }
             return;
@@ -2867,16 +2995,32 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 gameState = GameState.MULTIPLAYER_MENU;
                 multiplayerMenuIndex = 0;
                 break;
-            case 4: // Settings
+            case 4: // Character
+                gameState = GameState.CUSTOMIZE;
+                customizeMenuIndex = 0;
+                break;
+            case 5: // Settings
                 previousStateBeforeSettings = GameState.MAIN_MENU;
                 gameState = GameState.SETTINGS;
                 settingsMenuIndex = 0;
                 break;
-            case 5: // Credits
+            case 6: // Credits
                 gameState = GameState.CREDITS;
                 break;
-            case 6: // Quit
+            case 7: // Quit
                 System.exit(0);
+                break;
+        }
+    }
+
+    private void handleCustomizeSelect(int index) {
+        switch (index) {
+            case 0:
+            case 1:
+                adjustCustomization(1);
+                break;
+            case 2:
+                gameState = GameState.MAIN_MENU;
                 break;
         }
     }
@@ -2949,6 +3093,28 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         localPaletteIndex = clampPaletteIndex(localPaletteIndex + delta);
         settings.setSuitPalette(localPaletteIndex);
         settings.save();
+    }
+
+    private void cycleVisor(int delta) {
+        localVisorIndex = clampVisorIndex(localVisorIndex + delta);
+        settings.setVisorColor(localVisorIndex);
+        settings.save();
+    }
+
+    private void adjustCustomization(int delta) {
+        switch (customizeMenuIndex) {
+            case 0:
+                cyclePalette(delta);
+                break;
+            case 1:
+                cycleVisor(delta);
+                break;
+            case 2:
+                gameState = GameState.MAIN_MENU;
+                break;
+            default:
+                break;
+        }
     }
 
     private void toggleSharedRespawn() {
