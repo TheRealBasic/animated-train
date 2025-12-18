@@ -185,6 +185,11 @@ public class Player {
         };
         g2d.rotate(angle, centerX, centerY);
 
+        double facingScale = facingRight ? 1 : -1;
+        g2d.translate(centerX, centerY);
+        g2d.scale(facingScale, 1);
+        g2d.translate(-centerX, -centerY);
+
         double bodyX = x;
         double bodyY = y;
         double limbThickness = Math.max(4, width / 5.0);
@@ -201,8 +206,6 @@ public class Player {
             armSwing = -12;
         }
         double idleBob = Math.sin(animationTimer * 2.4) * (grounded ? 1.2 : 0.2);
-
-        double facing = facingRight ? 1 : -1;
 
         g2d.setColor(new Color(8, 6, 16, 130));
         g2d.fillRoundRect((int) bodyX + 2, (int) bodyY + 6, (int) torsoWidth, (int) torsoHeight, 6, 6);
@@ -228,18 +231,12 @@ public class Player {
         g2d.setColor(new Color(184, 214, 214, 160));
         g2d.fillRoundRect((int) bodyX + (int) torsoWidth / 2 - 4, (int) bodyY + 13, 8, 4, 4, 4);
 
-        AffineTransform faceTransform = g2d.getTransform();
-        double headCenterX = headX + headSize / 2.0;
-        g2d.translate(headCenterX, 0);
-        g2d.scale(facing, 1);
-        g2d.translate(-headCenterX, 0);
         g2d.setColor(new Color(42, 30, 54));
         g2d.fillOval((int) headX, (int) headY, (int) headSize, (int) headSize);
         g2d.setColor(visorColor);
         g2d.fillRoundRect((int) headX + 2, (int) headY + 4, (int) headSize - 4, 10, 6, 6);
         g2d.setColor(new Color(255, 255, 255, 160));
         g2d.fillRoundRect((int) headX + 4, (int) headY + 5, 8, 4, 4, 4);
-        g2d.setTransform(faceTransform);
 
         g2d.setStroke(oldStroke);
         g2d.setTransform(old);

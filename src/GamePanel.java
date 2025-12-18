@@ -1357,42 +1357,54 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         double stress = getScreenStress();
 
         if (settings.isScreenDistortionEnabled()) {
-            int[] src = ((DataBufferInt) source.getRaster().getDataBuffer()).getData();
-            int[] dst = ((DataBufferInt) distorted.getRaster().getDataBuffer()).getData();
+            boolean heavyDistortion = stress > 0.12 || screenShakeTimer > 0.01 || screenShakeStrength > 0.01;
+            if (!heavyDistortion && stress < 0.02) {
+                Graphics2D copy = distorted.createGraphics();
+                copy.drawImage(source, 0, 0, null);
+                copy.dispose();
+            } else {
+                int[] src = ((DataBufferInt) source.getRaster().getDataBuffer()).getData();
+                int[] dst = ((DataBufferInt) distorted.getRaster().getDataBuffer()).getData();
 
-            double cx = width / 2.0;
-            double cy = height / 2.0;
-            double fishEyeStrength = 0.18 + 0.14 * stress;
-            double aberration = 0.6 + 3.2 * Math.min(1.0, deathEffectTimer) + 1.1 * stress;
-            double wobble = 0.35 * Math.sin(System.nanoTime() / 1_000_000_000.0 * 4.0) + stress * 0.18 * Math.sin(System.nanoTime() / 1_000_000_000.0 * 7.2);
-            aberration += wobble;
+                double cx = width / 2.0;
+                double cy = height / 2.0;
+                double fishEyeStrength = 0.18 + 0.14 * stress;
+                double aberration = 0.6 + 3.2 * Math.min(1.0, deathEffectTimer) + 1.1 * stress;
+                double wobble = 0.35 * Math.sin(System.nanoTime() / 1_000_000_000.0 * 4.0) + stress * 0.18 * Math.sin(System.nanoTime() / 1_000_000_000.0 * 7.2);
+                aberration += wobble;
 
-            double shakeDuration = 0.6;
-            double shakeScale = screenShakeTimer > 0 ? screenShakeStrength * (screenShakeTimer / shakeDuration) : 0.0;
-            shakeScale += 0.16 * stress;
-            double shakeX = (vhsNoise.nextDouble() * 2 - 1) * shakeScale;
-            double shakeY = (vhsNoise.nextDouble() * 2 - 1) * shakeScale;
+                double shakeDuration = 0.6;
+                double shakeScale = screenShakeTimer > 0 ? screenShakeStrength * (screenShakeTimer / shakeDuration) : 0.0;
+                shakeScale += 0.16 * stress;
+                double shakeX = (vhsNoise.nextDouble() * 2 - 1) * shakeScale;
+                double shakeY = (vhsNoise.nextDouble() * 2 - 1) * shakeScale;
 
-            for (int y = 0; y < height; y++) {
-                double dy = (y - cy - shakeY) / cy;
-                for (int x = 0; x < width; x++) {
-                    double dx = (x - cx - shakeX) / cx;
-                    double r = Math.sqrt(dx * dx + dy * dy);
-                    double distort = 1 + fishEyeStrength * r * r;
-                    double sampleX = cx + dx * distort * cx + shakeX;
-                    double sampleY = cy + dy * distort * cy + shakeY;
+                for (int y = 0; y < height; y++) {
+                    double dy = (y - cy - shakeY) / cy;
+                    int rowOffset = y * width;
+                    for (int x = 0; x < width; x++) {
+                        double dx = (x - cx - shakeX) / cx;
+                        double r = Math.sqrt(dx * dx + dy * dy);
+                        double distort = 1 + fishEyeStrength * r * r;
+                        double sampleX = cx + dx * distort * cx + shakeX;
+                        double sampleY = cy + dy * distort * cy + shakeY;
 
-                    int baseX = clampToInt(Math.round(sampleX), 0, width - 1);
-                    int baseY = clampToInt(Math.round(sampleY), 0, height - 1);
-                    int baseRgb = src[baseY * width + baseX];
-                    int alpha = (baseRgb >>> 24) & 0xFF;
+                        int baseX = clampToInt(Math.round(sampleX), 0, width - 1);
+                        int baseY = clampToInt(Math.round(sampleY), 0, height - 1);
+                        int baseRgb = src[baseY * width + baseX];
+                        if (!heavyDistortion) {
+                            dst[rowOffset + x] = baseRgb;
+                            continue;
+                        }
 
-                    int rSample = sampleChannel(src, sampleX + aberration, sampleY - aberration, width, height, 16);
-                    int gSample = sampleChannel(src, sampleX, sampleY, width, height, 8);
-                    int bSample = sampleChannel(src, sampleX - aberration, sampleY + aberration, width, height, 0);
+                        int alpha = (baseRgb >>> 24) & 0xFF;
+                        int rSample = sampleChannel(src, sampleX + aberration, sampleY - aberration, width, height, 16);
+                        int gSample = sampleChannel(src, sampleX, sampleY, width, height, 8);
+                        int bSample = sampleChannel(src, sampleX - aberration, sampleY + aberration, width, height, 0);
 
-                    int rgb = (alpha << 24) | (rSample << 16) | (gSample << 8) | bSample;
-                    dst[y * width + x] = rgb;
+                        int rgb = (alpha << 24) | (rSample << 16) | (gSample << 8) | bSample;
+                        dst[rowOffset + x] = rgb;
+                    }
                 }
             }
         } else {
