@@ -3,6 +3,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class LevelData {
+    private final String id;
     private final String name;
     private final List<Platform> platforms;
     private final List<MovingPlatform> movers;
@@ -20,8 +21,10 @@ public class LevelData {
     private final GravityDir spawnGravity;
     private final double parTimeSeconds;
     private final boolean multiplayerOnly;
+    private final boolean custom;
 
-    public LevelData(String name,
+    public LevelData(String id,
+                     String name,
                      List<Platform> platforms,
                      List<Point2D.Double> orbPositions,
                      List<MovingPlatform> movers,
@@ -37,7 +40,9 @@ public class LevelData {
                      Point2D.Double partnerSpawnPosition,
                      GravityDir spawnGravity,
                      double parTimeSeconds,
-                     boolean multiplayerOnly) {
+                     boolean multiplayerOnly,
+                     boolean custom) {
+        this.id = id == null || id.isBlank() ? name : id;
         this.name = name;
         this.platforms = new ArrayList<>(platforms);
         this.movers = new ArrayList<>(movers);
@@ -55,6 +60,11 @@ public class LevelData {
         this.spawnGravity = spawnGravity;
         this.parTimeSeconds = parTimeSeconds;
         this.multiplayerOnly = multiplayerOnly;
+        this.custom = custom;
+    }
+
+    public String getId() {
+        return id;
     }
 
     public String getName() {
@@ -123,5 +133,9 @@ public class LevelData {
 
     public boolean isMultiplayerOnly() {
         return multiplayerOnly;
+    }
+
+    public boolean isCustom() {
+        return custom;
     }
 }

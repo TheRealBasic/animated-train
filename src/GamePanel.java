@@ -24,10 +24,14 @@ import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.io.UncheckedIOException;
+import java.util.Base64;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Optional;
 import java.util.Random;
+import java.util.Arrays;
+import java.nio.charset.StandardCharsets;
 
 @SuppressWarnings({"serial", "this-escape"})
 public class GamePanel extends JPanel implements ActionListener, KeyListener {
@@ -95,6 +99,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
     private Settings settings;
     private SaveGame.SaveData saveData;
+    private int activeSaveSlot;
     private double gravityCooldownRemaining;
 
     private GameState gameState = GameState.SPLASH;
@@ -187,6 +192,13 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private int customizeMenuIndex;
     private final Player customizePreview;
     private double customizePreviewTimer;
+    private LevelDraft editorDraft;
+    private int editorToolIndex;
+    private double editorCursorX;
+    private double editorCursorY;
+    private double editorWidth;
+    private double editorHeight;
+    private String editorStatus;
 
     private enum GameState {
         SPLASH,
@@ -196,6 +208,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         SETTINGS,
         CUSTOMIZE,
         LEVEL_SELECT,
+        LEVEL_EDITOR,
         LOADING,
         IN_GAME,
         PAUSE,
@@ -244,9 +257,17 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         player = new Player(0, 0, PLAYER_W, PLAYER_H);
         partner = new Player(0, 0, PLAYER_W, PLAYER_H);
         customizePreview = new Player(BASE_WIDTH / 2.0 - 12, BASE_HEIGHT / 2.0, PLAYER_W, PLAYER_H);
+        editorDraft = new LevelDraft();
+        editorToolIndex = 0;
+        editorCursorX = 120;
+        editorCursorY = 420;
+        editorWidth = 140;
+        editorHeight = 18;
+        editorStatus = "Use Q/E to switch tools";
 
         levelManager = new LevelManager();
-        saveData = SaveGame.load(levelManager.getLevelCount());
+        activeSaveSlot = Math.max(1, Math.min(3, settings.getActiveSaveSlot()));
+        saveData = SaveGame.load(levelManager.getLevelCount(), activeSaveSlot);
         loadLevel(saveData.currentLevelIndex);
 
         timer = new Timer(16, this);
@@ -333,6 +354,27 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         loadLevel(pendingLevelIndex);
         levelLoadProgress = 0;
         gameState = GameState.LOADING;
+    }
+
+    private void persistSave() {
+        SaveGame.save(saveData, activeSaveSlot);
+    }
+
+    private void wipeSaveSlot() {
+        SaveGame.wipe(activeSaveSlot);
+        saveData = SaveGame.load(levelManager.getLevelCount(), activeSaveSlot);
+    }
+
+    private void ensureSaveCapacity(int levelCount) {
+        if (saveData == null) {
+            return;
+        }
+        if (saveData.bestTimes.length >= levelCount) {
+            return;
+        }
+        saveData.bestTimes = Arrays.copyOf(saveData.bestTimes, levelCount);
+        saveData.bestMedals = Arrays.copyOf(saveData.bestMedals, levelCount);
+        saveData.bestDeaths = Arrays.copyOf(saveData.bestDeaths, levelCount);
     }
 
     @Override
@@ -648,6 +690,17 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
         double lastRemoteInterval = Math.min(0.5, Math.max(0.016, timeSinceRemote));
         timeSinceRemote = 0;
+        if (remote.levelPayload() != null && remote.levelId() != null) {
+            try {
+                String json = new String(Base64.getDecoder().decode(remote.levelPayload()), StandardCharsets.UTF_8);
+                LevelData incoming = levelManager.createLevelFromJson(remote.levelId(), json, true);
+                if (incoming != null) {
+                    levelManager.registerCustomLevel(incoming);
+                    ensureSaveCapacity(levelManager.getLevelCount());
+                }
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
         if (remote.levelIndex() != null) {
             int levelCount = Math.max(1, getMultiplayerLevelCount());
             multiplayerLevelIndex = Math.max(0, Math.min(remote.levelIndex(), levelCount - 1));
@@ -690,6 +743,11 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
         int levelCount = Math.max(1, getMultiplayerLevelCount());
         int idx = Math.max(0, Math.min(multiplayerLevelIndex, levelCount - 1));
+        LevelData selected = getCurrentMultiplayerLevel();
+        if (selected != null && selected.isCustom()) {
+            String payload = Base64.getEncoder().encodeToString(levelManager.serialize(selected).getBytes(StandardCharsets.UTF_8));
+            session.sendLevelData(selected.getId(), payload);
+        }
         if (idx != lastAdvertisedLevel) {
             session.sendLevelIndex(idx);
             lastAdvertisedLevel = idx;
@@ -700,7 +758,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         int idx = Math.max(0, levelManager.indexOf(getCurrentMultiplayerLevel()));
         int coopIdx = Math.max(0, Math.min(multiplayerLevelIndex, Math.max(1, getMultiplayerLevelCount()) - 1));
         saveData.currentLevelIndex = idx;
-        SaveGame.save(saveData);
+        persistSave();
         loadLevel(idx);
         gameState = GameState.IN_GAME;
         localReady = false;
@@ -719,7 +777,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
         int idx = Math.max(0, levelManager.indexOf(getCurrentMultiplayerLevel()));
         saveData.currentLevelIndex = idx;
-        SaveGame.save(saveData);
+        persistSave();
         loadLevel(idx);
         gameState = GameState.IN_GAME;
         localReady = false;
@@ -1176,7 +1234,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         finalMessageTypeTimer = 0;
         finalMessageCharsRevealed = 0;
         matrixGlitchTimer = 0;
-        SaveGame.save(saveData);
+        persistSave();
         gameState = GameState.LEVEL_COMPLETE;
         levelCompleteIndex = 0;
     }
@@ -1261,6 +1319,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             case LEVEL_SELECT:
                 drawTitle(g2d, "Level Select");
                 drawLevelSelect(g2d);
+                break;
+            case LEVEL_EDITOR:
+                drawTitle(g2d, "Level Editor");
+                drawLevelEditor(g2d);
                 break;
             case LOADING:
                 drawLoadingScreen(g2d);
@@ -1804,6 +1866,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 "Continue",
                 "New Game",
                 "Level Select",
+                "Level Editor",
                 "Multiplayer",
                 "Character",
                 "Settings",
@@ -1977,13 +2040,82 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 }
             }
             g2d.setColor(levelSelectIndex == i ? new Color(198, 112, 230) : new Color(218, 208, 196));
-        if (locked) {
+            if (locked) {
                 g2d.setColor(new Color(98, 86, 108));
             }
             int width = g2d.getFontMetrics().stringWidth(label);
             g2d.drawString(label, (BASE_WIDTH - width) / 2, startY + i * 26);
         }
         drawControlHint(g2d, "Enter to play, Esc to back");
+    }
+
+    private void drawLevelEditor(Graphics2D g2d) {
+        g2d.setFont(new Font("Consolas", Font.PLAIN, 16));
+        g2d.setColor(new Color(218, 208, 196));
+        g2d.drawString("Name: " + editorDraft.name, 40, 150);
+        g2d.drawString("Par: " + (int) editorDraft.parTimeSeconds + "s", 40, 172);
+        g2d.drawString("Multiplayer: " + (editorDraft.multiplayerOnly ? "Co-op" : "Solo/Co-op"), 40, 194);
+
+        g2d.setColor(new Color(72, 52, 92));
+        g2d.fillRect(40, 210, BASE_WIDTH - 80, BASE_HEIGHT - 260);
+        g2d.setColor(new Color(42, 28, 60));
+        g2d.drawRect(40, 210, BASE_WIDTH - 80, BASE_HEIGHT - 260);
+
+        Graphics2D world = (Graphics2D) g2d.create();
+        world.translate(40, 210);
+        drawEditorWorld(world);
+        world.dispose();
+
+        g2d.setColor(new Color(206, 186, 232));
+        String[] tools = getEditorTools();
+        String toolLabel = "Tool: " + tools[editorToolIndex] + " (Q/E to cycle)";
+        g2d.drawString(toolLabel, 40, BASE_HEIGHT - 38);
+        g2d.drawString("[Arrows] Move cursor • [,/.] Size • Enter to place • Backspace undo", 40, BASE_HEIGHT - 20);
+        g2d.drawString("F2 save • M toggle multiplayer • R reset", BASE_WIDTH - 440, BASE_HEIGHT - 20);
+        if (editorStatus != null && !editorStatus.isBlank()) {
+            g2d.setColor(new Color(182, 232, 198));
+            g2d.drawString(editorStatus, BASE_WIDTH - 440, BASE_HEIGHT - 38);
+        }
+    }
+
+    private void drawEditorWorld(Graphics2D g2d) {
+        g2d.setColor(new Color(16, 12, 22));
+        g2d.fillRect(0, 0, BASE_WIDTH - 80, BASE_HEIGHT - 260);
+        g2d.setColor(new Color(52, 40, 72));
+        for (int x = 0; x < BASE_WIDTH - 80; x += 40) {
+            g2d.drawLine(x, 0, x, BASE_HEIGHT - 260);
+        }
+        for (int y = 0; y < BASE_HEIGHT - 260; y += 40) {
+            g2d.drawLine(0, y, BASE_WIDTH - 80, y);
+        }
+        g2d.setColor(new Color(90, 64, 126));
+        for (Platform p : editorDraft.platforms) {
+            g2d.fillRect((int) p.getX(), (int) p.getY(), (int) p.getWidth(), (int) p.getHeight());
+        }
+        g2d.setColor(new Color(156, 82, 96));
+        for (Spike s : editorDraft.spikes) {
+            g2d.fillRect((int) s.getX(), (int) s.getY(), (int) s.getWidth(), (int) s.getHeight());
+        }
+        g2d.setColor(new Color(214, 186, 100));
+        for (Checkpoint checkpoint : editorDraft.checkpoints) {
+            Point2D.Double pos = checkpoint.getPosition();
+            g2d.fillRect((int) pos.x - 4, (int) pos.y - 14, 8, 28);
+        }
+        g2d.setColor(new Color(120, 200, 232));
+        for (Point2D.Double orb : editorDraft.orbs) {
+            g2d.fillOval((int) orb.x - 6, (int) orb.y - 6, 12, 12);
+        }
+        g2d.setColor(new Color(90, 220, 162));
+        g2d.drawRect((int) editorDraft.exitGateX, (int) editorDraft.exitGateY, editorDraft.exitGateWidth, editorDraft.exitGateHeight);
+        g2d.drawString("Exit", (int) editorDraft.exitGateX + 4, (int) editorDraft.exitGateY - 6);
+        g2d.setColor(new Color(200, 214, 236));
+        g2d.fillRect((int) editorDraft.spawn.x - PLAYER_W / 2, (int) editorDraft.spawn.y - PLAYER_H, PLAYER_W, PLAYER_H);
+        g2d.setColor(new Color(120, 186, 244));
+        g2d.fillRect((int) editorDraft.partnerSpawn.x - PLAYER_W / 2, (int) editorDraft.partnerSpawn.y - PLAYER_H, PLAYER_W, PLAYER_H);
+
+        g2d.setColor(new Color(236, 124, 132));
+        g2d.drawOval((int) editorCursorX - 6, (int) editorCursorY - 6, 12, 12);
+        g2d.drawRect((int) (editorCursorX - editorWidth / 2), (int) (editorCursorY - editorHeight / 2), (int) editorWidth, (int) editorHeight);
     }
 
     private void drawWorld(Graphics2D g2d) {
@@ -2760,7 +2892,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
 
         if (gameState == GameState.MAIN_MENU) {
-            handleMenuNavigation(e, 8, () -> handleMainMenuSelect(mainMenuIndex));
+            handleMenuNavigation(e, 9, () -> handleMainMenuSelect(mainMenuIndex));
             return;
         }
         if (gameState == GameState.MULTIPLAYER_MENU) {
@@ -2821,6 +2953,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             if (e.getKeyCode() == KeyEvent.VK_ESCAPE) {
                 gameState = GameState.MAIN_MENU;
             }
+            return;
+        }
+        if (gameState == GameState.LEVEL_EDITOR) {
+            handleEditorInput(e);
             return;
         }
         if (gameState == GameState.CUSTOMIZE) {
@@ -2995,31 +3131,35 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 startLevelLoad(Math.min(saveData.currentLevelIndex, levelManager.getLevelCount() - 1));
                 break;
             case 1: // New Game
-                SaveGame.wipe();
-                saveData = SaveGame.load(levelManager.getLevelCount());
+                wipeSaveSlot();
                 startLevelLoad(0);
                 break;
             case 2: // Level Select
                 gameState = GameState.LEVEL_SELECT;
                 levelSelectIndex = 0;
                 break;
-            case 3: // Multiplayer
+            case 3: // Level Editor
+                editorDraft.reset();
+                gameState = GameState.LEVEL_EDITOR;
+                editorStatus = "Draft reset";
+                break;
+            case 4: // Multiplayer
                 gameState = GameState.MULTIPLAYER_MENU;
                 multiplayerMenuIndex = 0;
                 break;
-            case 4: // Character
+            case 5: // Character
                 gameState = GameState.CUSTOMIZE;
                 customizeMenuIndex = 0;
                 break;
-            case 5: // Settings
+            case 6: // Settings
                 previousStateBeforeSettings = GameState.MAIN_MENU;
                 gameState = GameState.SETTINGS;
                 settingsMenuIndex = 0;
                 break;
-            case 6: // Credits
+            case 7: // Credits
                 gameState = GameState.CREDITS;
                 break;
-            case 7: // Quit
+            case 8: // Quit
                 System.exit(0);
                 break;
         }
@@ -3051,7 +3191,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 settingsMenuIndex = 0;
                 break;
             case 3:
-                SaveGame.save(saveData);
+                persistSave();
                 settings.save();
                 closeSession();
                 gameState = GameState.MAIN_MENU;
@@ -3062,7 +3202,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private void handleLevelSelect(int index) {
         if (index < saveData.unlockedLevels) {
             saveData.currentLevelIndex = index;
-            SaveGame.save(saveData);
+            persistSave();
             startLevelLoad(index);
         }
     }
@@ -3075,6 +3215,172 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             case 1:
                 gameState = GameState.MAIN_MENU;
                 break;
+        }
+    }
+
+    private String[] getEditorTools() {
+        return new String[]{"Platform", "Spike", "Orb", "Checkpoint", "Spawn", "Partner Spawn", "Exit"};
+    }
+
+    private void cycleEditorTool(int delta) {
+        String[] tools = getEditorTools();
+        editorToolIndex = (editorToolIndex + delta + tools.length) % tools.length;
+        editorStatus = "Switched to " + tools[editorToolIndex];
+    }
+
+    private void placeEditorElement() {
+        String tool = getEditorTools()[editorToolIndex];
+        switch (tool) {
+            case "Platform":
+                editorDraft.platforms.add(new Platform(editorCursorX - editorWidth / 2, editorCursorY - editorHeight / 2,
+                        (int) editorWidth, (int) editorHeight));
+                editorStatus = "Platform added";
+                break;
+            case "Spike":
+                editorDraft.spikes.add(new Spike(editorCursorX - editorWidth / 2, editorCursorY - editorHeight / 2,
+                        (int) editorWidth, (int) editorHeight));
+                editorStatus = "Spike added";
+                break;
+            case "Orb":
+                editorDraft.orbs.add(new Point2D.Double(editorCursorX, editorCursorY));
+                editorStatus = "Flux orb placed";
+                break;
+            case "Checkpoint":
+                editorDraft.checkpoints.add(new Checkpoint(new Point2D.Double(editorCursorX, editorCursorY), 16));
+                editorStatus = "Checkpoint placed";
+                break;
+            case "Spawn":
+                editorDraft.spawn = new Point2D.Double(editorCursorX, editorCursorY);
+                editorStatus = "Spawn set";
+                break;
+            case "Partner Spawn":
+                editorDraft.partnerSpawn = new Point2D.Double(editorCursorX, editorCursorY);
+                editorStatus = "Partner spawn set";
+                break;
+            case "Exit":
+                editorDraft.exitGateX = editorCursorX - editorWidth / 2;
+                editorDraft.exitGateY = editorCursorY - editorHeight / 2;
+                editorDraft.exitGateWidth = (int) editorWidth;
+                editorDraft.exitGateHeight = (int) editorHeight;
+                editorStatus = "Exit gate repositioned";
+                break;
+        }
+    }
+
+    private void undoEditorElement() {
+        String tool = getEditorTools()[editorToolIndex];
+        switch (tool) {
+            case "Platform":
+                if (!editorDraft.platforms.isEmpty()) {
+                    editorDraft.platforms.remove(editorDraft.platforms.size() - 1);
+                    editorStatus = "Platform removed";
+                }
+                break;
+            case "Spike":
+                if (!editorDraft.spikes.isEmpty()) {
+                    editorDraft.spikes.remove(editorDraft.spikes.size() - 1);
+                    editorStatus = "Spike removed";
+                }
+                break;
+            case "Orb":
+                if (!editorDraft.orbs.isEmpty()) {
+                    editorDraft.orbs.remove(editorDraft.orbs.size() - 1);
+                    editorStatus = "Orb removed";
+                }
+                break;
+            case "Checkpoint":
+                if (!editorDraft.checkpoints.isEmpty()) {
+                    editorDraft.checkpoints.remove(editorDraft.checkpoints.size() - 1);
+                    editorStatus = "Checkpoint removed";
+                }
+                break;
+            default:
+                editorStatus = "Nothing to undo";
+                break;
+        }
+    }
+
+    private void saveEditorLevel() {
+        LevelData data = editorDraft.build();
+        levelManager.registerCustomLevel(data);
+        try {
+            levelManager.saveCustomCopy(data);
+            editorStatus = "Saved as " + data.getId() + ".json";
+        } catch (UncheckedIOException ex) {
+            editorStatus = "Failed to save level: " + ex.getMessage();
+        }
+        ensureSaveCapacity(levelManager.getLevelCount());
+        saveData.unlockedLevels = levelManager.getLevelCount();
+    }
+
+    private void handleEditorInput(KeyEvent e) {
+        int step = shiftPressed ? 32 : 12;
+        int areaW = BASE_WIDTH - 80;
+        int areaH = BASE_HEIGHT - 260;
+        if (e.getKeyCode() == KeyEvent.VK_ESCAPE) {
+            gameState = GameState.MAIN_MENU;
+            return;
+        }
+        if (e.getKeyCode() == KeyEvent.VK_LEFT) {
+            editorCursorX = Math.max(0, editorCursorX - step);
+            return;
+        }
+        if (e.getKeyCode() == KeyEvent.VK_RIGHT) {
+            editorCursorX = Math.min(areaW, editorCursorX + step);
+            return;
+        }
+        if (e.getKeyCode() == KeyEvent.VK_UP) {
+            editorCursorY = Math.max(0, editorCursorY - step);
+            return;
+        }
+        if (e.getKeyCode() == KeyEvent.VK_DOWN) {
+            editorCursorY = Math.min(areaH, editorCursorY + step);
+            return;
+        }
+        if (e.getKeyCode() == KeyEvent.VK_Q) {
+            cycleEditorTool(-1);
+            return;
+        }
+        if (e.getKeyCode() == KeyEvent.VK_E) {
+            cycleEditorTool(1);
+            return;
+        }
+        if (e.getKeyCode() == KeyEvent.VK_OPEN_BRACKET) {
+            editorWidth = Math.max(12, editorWidth - 8);
+            return;
+        }
+        if (e.getKeyCode() == KeyEvent.VK_CLOSE_BRACKET) {
+            editorWidth = Math.min(400, editorWidth + 8);
+            return;
+        }
+        if (e.getKeyCode() == KeyEvent.VK_COMMA) {
+            editorHeight = Math.max(12, editorHeight - 4);
+            return;
+        }
+        if (e.getKeyCode() == KeyEvent.VK_PERIOD) {
+            editorHeight = Math.min(200, editorHeight + 4);
+            return;
+        }
+        if (e.getKeyCode() == KeyEvent.VK_ENTER || e.getKeyCode() == KeyEvent.VK_SPACE) {
+            placeEditorElement();
+            return;
+        }
+        if (e.getKeyCode() == KeyEvent.VK_BACK_SPACE) {
+            undoEditorElement();
+            return;
+        }
+        if (e.getKeyCode() == KeyEvent.VK_M) {
+            editorDraft.multiplayerOnly = !editorDraft.multiplayerOnly;
+            editorStatus = editorDraft.multiplayerOnly ? "Marked level co-op" : "Solo/co-op capable";
+            return;
+        }
+        if (e.getKeyCode() == KeyEvent.VK_R) {
+            editorDraft.reset();
+            editorStatus = "Draft reset";
+            return;
+        }
+        if (e.getKeyCode() == KeyEvent.VK_F2) {
+            saveEditorLevel();
         }
     }
 
@@ -3359,6 +3665,77 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             } else if (c == '\b' && !directIpInput.isEmpty()) {
                 directIpInput = directIpInput.substring(0, directIpInput.length() - 1);
             }
+        }
+        if (gameState == GameState.LEVEL_EDITOR) {
+            char c = e.getKeyChar();
+            if (c == '\b' && !editorDraft.name.isEmpty()) {
+                editorDraft.name = editorDraft.name.substring(0, editorDraft.name.length() - 1);
+            } else if (Character.isLetterOrDigit(c) || c == ' ' || c == '_' || c == '-') {
+                if (editorDraft.name.length() < 32) {
+                    editorDraft.name += c;
+                }
+            }
+        }
+    }
+
+    private static class LevelDraft {
+        private String id;
+        private String name;
+        private double parTimeSeconds;
+        private boolean multiplayerOnly;
+        private double exitGateX;
+        private double exitGateY;
+        private int exitGateWidth;
+        private int exitGateHeight;
+        private Point2D.Double spawn;
+        private Point2D.Double partnerSpawn;
+        private GravityDir gravity;
+        private final List<Platform> platforms = new ArrayList<>();
+        private final List<MovingPlatform> movers = new ArrayList<>();
+        private final List<Spike> spikes = new ArrayList<>();
+        private final List<Checkpoint> checkpoints = new ArrayList<>();
+        private final List<Point2D.Double> orbs = new ArrayList<>();
+        private final List<CoopButton> buttons = new ArrayList<>();
+        private final List<CoopDoor> doors = new ArrayList<>();
+
+        LevelDraft() {
+            reset();
+        }
+
+        void reset() {
+            id = "custom_" + System.currentTimeMillis();
+            name = "Custom Build";
+            parTimeSeconds = 90;
+            multiplayerOnly = false;
+            exitGateX = 820;
+            exitGateY = 300;
+            exitGateWidth = 60;
+            exitGateHeight = 120;
+            spawn = new Point2D.Double(100, 420);
+            partnerSpawn = new Point2D.Double(140, 420);
+            gravity = GravityDir.DOWN;
+            platforms.clear();
+            movers.clear();
+            spikes.clear();
+            checkpoints.clear();
+            orbs.clear();
+            buttons.clear();
+            doors.clear();
+            platforms.add(new Platform(0, 500, 960, 40));
+        }
+
+        LevelData build() {
+            return new LevelData(id, name,
+                    new ArrayList<>(platforms),
+                    new ArrayList<>(orbs),
+                    new ArrayList<>(movers),
+                    new ArrayList<>(spikes),
+                    new ArrayList<>(checkpoints),
+                    new ArrayList<>(buttons),
+                    new ArrayList<>(doors),
+                    exitGateX, exitGateY, exitGateWidth, exitGateHeight,
+                    new Point2D.Double(spawn.x, spawn.y), new Point2D.Double(partnerSpawn.x, partnerSpawn.y),
+                    gravity, parTimeSeconds, multiplayerOnly, true);
         }
     }
 }
