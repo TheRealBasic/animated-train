@@ -155,10 +155,13 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private String lastHintMessage = "";
     private boolean gateUnlockAnnounced;
     private boolean finalEscapeSequenceActive;
+    private boolean finalShutdownTriggered;
+    private double finalShutdownTimer;
     private double levelCompleteElapsed;
     private double finalMessageTypeTimer;
     private int finalMessageCharsRevealed;
     private double matrixGlitchTimer;
+    private boolean screenEffectsCalmOverride;
 
     private enum GameState {
         SPLASH,
@@ -265,10 +268,13 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         lastHintMessage = "";
         gateUnlockAnnounced = false;
         finalEscapeSequenceActive = false;
+        finalShutdownTriggered = false;
         levelCompleteElapsed = 0;
         finalMessageTypeTimer = 0;
         finalMessageCharsRevealed = 0;
         matrixGlitchTimer = 0;
+        finalShutdownTimer = 0;
+        screenEffectsCalmOverride = false;
         if (companion != null) {
             companion.snapTo(spawn.x - 26, spawn.y - 32);
         }
@@ -758,6 +764,32 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 }
             }
         }
+
+        if (finalMessageCharsRevealed >= FINAL_ESCAPE_MESSAGE.length()) {
+            finalShutdownTimer += dt;
+            double shutdownDelay = 1.8;
+            if (!finalShutdownTriggered && finalShutdownTimer >= shutdownDelay) {
+                triggerFinalShutdown();
+            }
+        }
+    }
+
+    private void triggerFinalShutdown() {
+        finalShutdownTriggered = true;
+        screenEffectsCalmOverride = true;
+        resetScreenEffects();
+        finalEscapeSequenceActive = false;
+        gameState = GameState.MAIN_MENU;
+        levelCompleteElapsed = 0;
+    }
+
+    private void resetScreenEffects() {
+        deathEffectTimer = 0;
+        screenShakeTimer = 0;
+        screenShakeStrength = 0;
+        matrixGlitchTimer = 0;
+        finalMessageTypeTimer = 0;
+        finalMessageCharsRevealed = 0;
     }
 
     private void updateGravityCooldown(double dt) {
@@ -897,6 +929,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private double getScreenStress() {
+        if (screenEffectsCalmOverride || finalEscapeSequenceActive) {
+            return 0.0;
+        }
         int finalSolo = Math.max(1, getFinalSoloLevelIndex());
         int current = Math.min(getActiveLevelIndex(), finalSolo);
         return Math.max(0.0, Math.min(1.0, current / (double) finalSolo));
@@ -948,6 +983,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             setCompanionToast("New personal best logged!", new Color(178, 236, 196));
         }
         finalEscapeSequenceActive = !multiplayerActive && lastCompletedIndex == getFinalSoloLevelIndex();
+        screenEffectsCalmOverride = finalEscapeSequenceActive;
+        finalShutdownTriggered = false;
+        finalShutdownTimer = 0;
         levelCompleteElapsed = 0;
         finalMessageTypeTimer = 0;
         finalMessageCharsRevealed = 0;
@@ -2217,11 +2255,11 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
     private void drawLevelComplete(Graphics2D g2d) {
         if (finalEscapeSequenceActive) {
-            drawMatrixRain(g2d);
-            g2d.setColor(new Color(4, 8, 12, 200));
-        } else {
-            g2d.setColor(new Color(0, 0, 0, 160));
+            drawFinalEscapeScreen(g2d);
+            return;
         }
+
+        g2d.setColor(new Color(0, 0, 0, 160));
         g2d.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
         g2d.setFont(new Font("Consolas", Font.BOLD, 24));
         g2d.setColor(finalEscapeSequenceActive ? new Color(168, 238, 196) : new Color(218, 208, 196));
@@ -2288,6 +2326,49 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         String footer = "Lines of code cascade across the CRT and peel away, revealing a path out.";
         int footerWidth = g2d.getFontMetrics().stringWidth(footer);
         g2d.drawString(footer, (BASE_WIDTH - footerWidth) / 2, BASE_HEIGHT - 88);
+    }
+
+    private void drawMatrixRain(Graphics2D g2d) {
+        double stress = Math.max(0.2, getScreenStress());
+        Random rng = new Random(11L + (long) (matrixGlitchTimer * 1200));
+        g2d.setFont(new Font("Consolas", Font.PLAIN, 14));
+        for (int x = 0; x < BASE_WIDTH; x += 18) {
+            double speed = 40 + rng.nextDouble() * 120 * (0.6 + stress);
+            double offset = (matrixGlitchTimer * speed + rng.nextInt(BASE_HEIGHT)) % (BASE_HEIGHT + 60) - 60;
+            for (int y = (int) offset; y < BASE_HEIGHT; y += 20) {
+                char c = rng.nextBoolean() ? '0' : '1';
+                int alpha = (int) Math.min(196, 64 + (BASE_HEIGHT - y) * (0.2 + stress));
+                g2d.setColor(new Color(94, 232, 168, Math.max(10, alpha)));
+                g2d.drawString(Character.toString(c), x, y);
+            }
+        }
+    }
+
+    private void drawFinalEscapeScreen(Graphics2D g2d) {
+        g2d.setColor(Color.BLACK);
+        g2d.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+
+        if (levelCompleteElapsed < 0.9) {
+            Composite old = g2d.getComposite();
+            g2d.setComposite(AlphaComposite.SrcOver.derive(0.35f));
+            drawMatrixRain(g2d);
+            g2d.setComposite(old);
+        }
+
+        String rendered = FINAL_ESCAPE_MESSAGE.substring(0, Math.min(finalMessageCharsRevealed, FINAL_ESCAPE_MESSAGE.length()));
+        boolean showCursor = finalMessageCharsRevealed < FINAL_ESCAPE_MESSAGE.length() || ((int) (levelCompleteElapsed * 2) % 2 == 0);
+        String cursor = showCursor ? "_" : "";
+
+        g2d.setFont(new Font("Consolas", Font.BOLD, 24));
+        g2d.setColor(new Color(180, 244, 196));
+        int width = g2d.getFontMetrics().stringWidth(rendered + cursor);
+        g2d.drawString(rendered + cursor, (BASE_WIDTH - width) / 2, BASE_HEIGHT / 2);
+
+        if (finalShutdownTriggered) {
+            float fade = (float) Math.min(1.0, finalShutdownTimer / 0.6);
+            g2d.setColor(new Color(0, 0, 0, (int) (fade * 255)));
+            g2d.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+        }
     }
 
     private void drawControlHint(Graphics2D g2d, String hint) {
@@ -2420,6 +2501,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             return;
         }
         if (gameState == GameState.LEVEL_COMPLETE) {
+            if (finalEscapeSequenceActive) {
+                return;
+            }
             handleMenuNavigation(e, 2, () -> handleLevelCompleteSelect(levelCompleteIndex));
             return;
         }
