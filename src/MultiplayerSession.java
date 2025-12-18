@@ -100,12 +100,12 @@ public class MultiplayerSession {
         });
     }
 
-    public void sendState(double x, double y, GravityDir gravity, long orbMask, int paletteIndex, boolean ready, boolean sharedRespawns) {
+    public void sendState(double x, double y, GravityDir gravity, long orbMask, int paletteIndex, int visorIndex, boolean ready, boolean sharedRespawns) {
         try {
             if (writer == null) {
                 writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8));
             }
-            String payload = String.format("STATE %.2f %.2f %s %d %d %d %d\n", x, y, gravity.name(), orbMask, paletteIndex, ready ? 1 : 0, sharedRespawns ? 1 : 0);
+            String payload = String.format("STATE %.2f %.2f %s %d %d %d %d %d\n", x, y, gravity.name(), orbMask, paletteIndex, visorIndex, ready ? 1 : 0, sharedRespawns ? 1 : 0);
             writer.write(payload);
             writer.flush();
         } catch (IOException ignored) {
@@ -162,10 +162,10 @@ public class MultiplayerSession {
     }
 
     public record RemoteState(Double x, Double y, GravityDir gravity, Long orbMask, Integer levelIndex,
-                             Integer paletteIndex, Boolean ready, Boolean sharedRespawns,
+                             Integer paletteIndex, Integer visorIndex, Boolean ready, Boolean sharedRespawns,
                              boolean startSignal, boolean respawnSignal) {
         public RemoteState() {
-            this(null, null, null, null, null, null, null, null, false, false);
+            this(null, null, null, null, null, null, null, null, null, false, false);
         }
 
         private RemoteState merge(RemoteState update) {
@@ -176,6 +176,7 @@ public class MultiplayerSession {
                     coalesce(update.orbMask, orbMask),
                     coalesce(update.levelIndex, levelIndex),
                     coalesce(update.paletteIndex, paletteIndex),
+                    coalesce(update.visorIndex, visorIndex),
                     coalesce(update.ready, ready),
                     coalesce(update.sharedRespawns, sharedRespawns),
                     startSignal || update.startSignal,
@@ -193,10 +194,10 @@ public class MultiplayerSession {
             }
             String[] parts = line.split(" ");
             if ("START".equals(parts[0])) {
-                return new RemoteState(null, null, null, null, null, null, null, null, true, false);
+                return new RemoteState(null, null, null, null, null, null, null, null, null, true, false);
             }
             if ("RESPAWN".equals(parts[0])) {
-                return new RemoteState(null, null, null, null, null, null, null, null, false, true);
+                return new RemoteState(null, null, null, null, null, null, null, null, null, false, true);
             }
             if (parts.length < 2) {
                 return null;
@@ -208,9 +209,10 @@ public class MultiplayerSession {
                     GravityDir gravity = GravityDir.valueOf(parts[3]);
                     long mask = Long.parseLong(parts[4]);
                     Integer palette = parts.length >= 6 ? Integer.parseInt(parts[5]) : null;
-                    Boolean ready = parts.length >= 7 ? Integer.parseInt(parts[6]) == 1 : null;
-                    Boolean shared = parts.length >= 8 ? Integer.parseInt(parts[7]) == 1 : null;
-                    return new RemoteState(x, y, gravity, mask, null, palette, ready, shared, false, false);
+                    Integer visor = parts.length >= 7 ? Integer.parseInt(parts[6]) : null;
+                    Boolean ready = parts.length >= 8 ? Integer.parseInt(parts[7]) == 1 : null;
+                    Boolean shared = parts.length >= 9 ? Integer.parseInt(parts[8]) == 1 : null;
+                    return new RemoteState(x, y, gravity, mask, null, palette, visor, ready, shared, false, false);
                 } catch (Exception ex) {
                     return null;
                 }
@@ -218,7 +220,7 @@ public class MultiplayerSession {
             if ("LEVEL".equals(parts[0]) && parts.length >= 2) {
                 try {
                     int level = Integer.parseInt(parts[1]);
-                    return new RemoteState(null, null, null, null, level, null, null, null, false, false);
+                    return new RemoteState(null, null, null, null, level, null, null, null, null, false, false);
                 } catch (NumberFormatException ex) {
                     return null;
                 }
