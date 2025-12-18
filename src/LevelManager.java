@@ -328,12 +328,13 @@ public class LevelManager {
 
     private void addLevel(List<LevelData> target, LevelData data) {
         levelById.put(data.getId(), data);
-        int existingIndex = indexOfId(data.getId());
-        if (existingIndex >= 0 && existingIndex < target.size()) {
-            target.set(existingIndex, data);
-        } else {
-            target.add(data);
+        for (int i = 0; i < target.size(); i++) {
+            if (data.getId().equals(target.get(i).getId())) {
+                target.set(i, data);
+                return;
+            }
         }
+        target.add(data);
     }
 
     private String escape(String value) {
