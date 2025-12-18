@@ -2262,7 +2262,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.setColor(new Color(0, 0, 0, 160));
         g2d.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
         g2d.setFont(new Font("Consolas", Font.BOLD, 24));
-        g2d.setColor(new Color(218, 208, 196));
+        g2d.setColor(finalEscapeSequenceActive ? new Color(168, 238, 196) : new Color(218, 208, 196));
         g2d.drawString("Level Complete!", BASE_WIDTH / 2 - 80, 160);
 
         LevelData data = levelManager.getLevel(lastCompletedIndex);
@@ -2286,6 +2286,46 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             int width = g2d.getFontMetrics().stringWidth(options[i]);
             g2d.drawString(options[i], (BASE_WIDTH - width) / 2, startY + i * 32);
         }
+
+        if (finalEscapeSequenceActive) {
+            drawFinalEscapeMessage(g2d);
+        }
+    }
+
+    private void drawMatrixRain(Graphics2D g2d) {
+        double stress = Math.max(0.2, getScreenStress());
+        Random rng = new Random(11L + (long) (matrixGlitchTimer * 1200));
+        g2d.setFont(new Font("Consolas", Font.PLAIN, 14));
+        for (int x = 0; x < BASE_WIDTH; x += 18) {
+            double speed = 40 + rng.nextDouble() * 120 * (0.6 + stress);
+            double offset = (matrixGlitchTimer * speed + rng.nextInt(BASE_HEIGHT)) % (BASE_HEIGHT + 60) - 60;
+            for (int y = (int) offset; y < BASE_HEIGHT; y += 20) {
+                char c = rng.nextBoolean() ? '0' : '1';
+                int alpha = (int) Math.min(196, 64 + (BASE_HEIGHT - y) * (0.2 + stress));
+                g2d.setColor(new Color(94, 232, 168, Math.max(10, alpha)));
+                g2d.drawString(Character.toString(c), x, y);
+            }
+        }
+    }
+
+    private void drawFinalEscapeMessage(Graphics2D g2d) {
+        g2d.setFont(new Font("Consolas", Font.PLAIN, 18));
+        g2d.setColor(new Color(148, 228, 186));
+        String preface = "Signal breach detected: soul transfer imminent.";
+        int prefaceWidth = g2d.getFontMetrics().stringWidth(preface);
+        g2d.drawString(preface, (BASE_WIDTH - prefaceWidth) / 2, BASE_HEIGHT - 160);
+
+        String rendered = FINAL_ESCAPE_MESSAGE.substring(0, Math.min(finalMessageCharsRevealed, FINAL_ESCAPE_MESSAGE.length()));
+        String cursor = finalMessageCharsRevealed < FINAL_ESCAPE_MESSAGE.length() && ((int) (levelCompleteElapsed * 2) % 2 == 0) ? "_" : "";
+        g2d.setFont(new Font("Consolas", Font.BOLD, 22));
+        int width = g2d.getFontMetrics().stringWidth(rendered + cursor);
+        g2d.drawString(rendered + cursor, (BASE_WIDTH - width) / 2, BASE_HEIGHT - 120);
+
+        g2d.setFont(new Font("Consolas", Font.PLAIN, 15));
+        g2d.setColor(new Color(96, 178, 152));
+        String footer = "Lines of code cascade across the CRT and peel away, revealing a path out.";
+        int footerWidth = g2d.getFontMetrics().stringWidth(footer);
+        g2d.drawString(footer, (BASE_WIDTH - footerWidth) / 2, BASE_HEIGHT - 88);
     }
 
     private void drawMatrixRain(Graphics2D g2d) {
