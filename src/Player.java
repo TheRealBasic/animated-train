@@ -229,8 +229,10 @@ public class Player {
         g2d.fillRoundRect((int) bodyX + (int) torsoWidth / 2 - 4, (int) bodyY + 13, 8, 4, 4, 4);
 
         AffineTransform faceTransform = g2d.getTransform();
-        g2d.translate(facing > 0 ? 0 : torsoWidth, 0);
+        double headCenterX = headX + headSize / 2.0;
+        g2d.translate(headCenterX, 0);
         g2d.scale(facing, 1);
+        g2d.translate(-headCenterX, 0);
         g2d.setColor(new Color(42, 30, 54));
         g2d.fillOval((int) headX, (int) headY, (int) headSize, (int) headSize);
         g2d.setColor(visorColor);
@@ -266,6 +268,10 @@ public class Player {
         } else {
             walkCycle += dt * 2.2;
         }
+    }
+
+    public void setFacingRight(boolean value) {
+        facingRight = value;
     }
 
     public double getX() {

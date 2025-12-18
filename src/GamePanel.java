@@ -440,6 +440,12 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         boolean moveLeft = leftPressed;
         boolean moveRight = rightPressed;
 
+        if (moveLeft && !moveRight) {
+            player.setFacingRight(false);
+        } else if (moveRight && !moveLeft) {
+            player.setFacingRight(true);
+        }
+
         if (gravityDir.isVertical()) {
             if (moveLeft && !moveRight) {
                 player.addVelocity(-moveSpeed, 0);
@@ -2948,6 +2954,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 case LEVEL_SELECT:
                     levelSelectIndex = (levelSelectIndex - 1 + itemCount) % itemCount;
                     break;
+                case CUSTOMIZE:
+                    customizeMenuIndex = (customizeMenuIndex - 1 + itemCount) % itemCount;
+                    break;
             }
         }
         if (e.getKeyCode() == KeyEvent.VK_S || e.getKeyCode() == KeyEvent.VK_DOWN) {
@@ -2969,6 +2978,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                     break;
                 case LEVEL_SELECT:
                     levelSelectIndex = (levelSelectIndex + 1) % itemCount;
+                    break;
+                case CUSTOMIZE:
+                    customizeMenuIndex = (customizeMenuIndex + 1) % itemCount;
                     break;
             }
         }
