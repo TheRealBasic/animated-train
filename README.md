@@ -54,7 +54,7 @@ Settings are available from the main or pause menu and include:
 - Master volume (affects all generated tones)
 - Screen scale (1x–2x pixel scaling)
 - Debug HUD and FPS overlay toggles
-- Reduced effects toggle (disables CRT/ghosting post-processing)
+- Individual screen-effect toggles for distortion, scanline overlay, and CRT bezel (legacy combined toggle still honored)
 - Rebindable Left/Right/Jump keys
 - Last joined IP for quick multiplayer reconnects
 

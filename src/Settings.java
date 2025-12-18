@@ -10,7 +10,12 @@ public class Settings {
     private double screenScale = 1.0;
     private boolean showDebugHud = false;
     private boolean showFps = false;
-    private boolean reducedEffects = false;
+    private boolean movementEffects = true;
+    private boolean jumpEffects = true;
+    private boolean deathEffects = true;
+    private boolean screenDistortion = true;
+    private boolean screenOverlay = true;
+    private boolean screenBezel = true;
     private boolean sharedRespawns = true;
     private int suitPalette = 0;
     private int keyLeft = java.awt.event.KeyEvent.VK_A;
@@ -31,7 +36,22 @@ public class Settings {
             settings.screenScale = Double.parseDouble(props.getProperty("screenScale", "1.0"));
             settings.showDebugHud = Boolean.parseBoolean(props.getProperty("showDebugHud", "false"));
             settings.showFps = Boolean.parseBoolean(props.getProperty("showFps", "false"));
-            settings.reducedEffects = Boolean.parseBoolean(props.getProperty("reducedEffects", "false"));
+            boolean legacyScreen = Boolean.parseBoolean(props.getProperty("screenEffects", "true"));
+            settings.movementEffects = Boolean.parseBoolean(props.getProperty("movementEffects", "true"));
+            settings.jumpEffects = Boolean.parseBoolean(props.getProperty("jumpEffects", "true"));
+            settings.deathEffects = Boolean.parseBoolean(props.getProperty("deathEffects", "true"));
+            settings.screenDistortion = Boolean.parseBoolean(props.getProperty("screenDistortion", Boolean.toString(legacyScreen)));
+            settings.screenOverlay = Boolean.parseBoolean(props.getProperty("screenOverlay", Boolean.toString(legacyScreen)));
+            settings.screenBezel = Boolean.parseBoolean(props.getProperty("screenBezel", Boolean.toString(legacyScreen)));
+            boolean legacyReduced = Boolean.parseBoolean(props.getProperty("reducedEffects", "false"));
+            if (legacyReduced) {
+                settings.movementEffects = false;
+                settings.jumpEffects = false;
+                settings.deathEffects = false;
+                settings.screenDistortion = false;
+                settings.screenOverlay = false;
+                settings.screenBezel = false;
+            }
             settings.sharedRespawns = Boolean.parseBoolean(props.getProperty("sharedRespawns", "true"));
             settings.suitPalette = Integer.parseInt(props.getProperty("suitPalette", "0"));
             settings.keyLeft = Integer.parseInt(props.getProperty("keyLeft", Integer.toString(settings.keyLeft)));
@@ -54,7 +74,13 @@ public class Settings {
         props.setProperty("screenScale", Double.toString(screenScale));
         props.setProperty("showDebugHud", Boolean.toString(showDebugHud));
         props.setProperty("showFps", Boolean.toString(showFps));
-        props.setProperty("reducedEffects", Boolean.toString(reducedEffects));
+        props.setProperty("movementEffects", Boolean.toString(movementEffects));
+        props.setProperty("jumpEffects", Boolean.toString(jumpEffects));
+        props.setProperty("deathEffects", Boolean.toString(deathEffects));
+        props.setProperty("screenEffects", Boolean.toString(isScreenEffectsEnabled()));
+        props.setProperty("screenDistortion", Boolean.toString(screenDistortion));
+        props.setProperty("screenOverlay", Boolean.toString(screenOverlay));
+        props.setProperty("screenBezel", Boolean.toString(screenBezel));
         props.setProperty("sharedRespawns", Boolean.toString(sharedRespawns));
         props.setProperty("suitPalette", Integer.toString(suitPalette));
         props.setProperty("keyLeft", Integer.toString(keyLeft));
@@ -91,12 +117,66 @@ public class Settings {
         this.showDebugHud = showDebugHud;
     }
 
-    public boolean isReducedEffects() {
-        return reducedEffects;
+    public boolean isMovementEffectsEnabled() {
+        return movementEffects;
     }
 
-    public void setReducedEffects(boolean reducedEffects) {
-        this.reducedEffects = reducedEffects;
+    public void setMovementEffectsEnabled(boolean movementEffects) {
+        this.movementEffects = movementEffects;
+    }
+
+    public boolean isJumpEffectsEnabled() {
+        return jumpEffects;
+    }
+
+    public void setJumpEffectsEnabled(boolean jumpEffects) {
+        this.jumpEffects = jumpEffects;
+    }
+
+    public boolean isDeathEffectsEnabled() {
+        return deathEffects;
+    }
+
+    public void setDeathEffectsEnabled(boolean deathEffects) {
+        this.deathEffects = deathEffects;
+    }
+
+    public boolean isScreenEffectsEnabled() {
+        return screenDistortion || screenOverlay || screenBezel;
+    }
+
+    public boolean isScreenProcessingEnabled() {
+        return screenDistortion || screenOverlay;
+    }
+
+    public boolean isScreenDistortionEnabled() {
+        return screenDistortion;
+    }
+
+    public void setScreenDistortionEnabled(boolean screenDistortion) {
+        this.screenDistortion = screenDistortion;
+    }
+
+    public boolean isScreenOverlayEnabled() {
+        return screenOverlay;
+    }
+
+    public void setScreenOverlayEnabled(boolean screenOverlay) {
+        this.screenOverlay = screenOverlay;
+    }
+
+    public boolean isScreenBezelEnabled() {
+        return screenBezel;
+    }
+
+    public void setScreenBezelEnabled(boolean screenBezel) {
+        this.screenBezel = screenBezel;
+    }
+
+    public void setScreenEffectsEnabled(boolean enabled) {
+        this.screenDistortion = enabled;
+        this.screenOverlay = enabled;
+        this.screenBezel = enabled;
     }
 
     public boolean isSharedRespawns() {
