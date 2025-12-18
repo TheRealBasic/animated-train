@@ -9,10 +9,11 @@ A standalone Java 2D platformer built on Swing/Java2D featuring a gravity-warpin
 - **Solo campaign**: Progress through handcrafted stages, collect all Flux Orbs, and race par times to earn Bronze, Silver, or Gold medals while unlocking the next level.
 - **Co-op levels**: Dedicated two-player maps (prefixed `zcoop`) built around synchronized buttons, doors, and orb collection with shared victory conditions.
 - **LAN/direct multiplayer**: Host or join sessions over your network or direct IP with automatic level syncing and shared progression for the session.
-- **Accessible configuration**: In-game Settings menu for rebinding keys, adjusting screen scale, toggling HUD/CRT visual effects, and tuning master volume.
+- **Level editor**: Build your own stages in-game from the Main Menu → Level Editor, place platforms/spikes/orbs/spawns/exits, then save to `assets/levels/custom/` for solo or co-op.
+- **Accessible configuration**: In-game Settings menu for rebinding keys, adjusting screen scale, toggling HUD/CRT visual effects, choosing an active save slot, and tuning per-channel (master/UI/SFX) audio levels.
 - **Debug visibility**: Optional debug HUD with FPS overlay and adjustable post-processing toggles for development or performance tuning.
 - **Procedural audio & bundled assets**: All sound effects are generated at runtime; level JSON files and sprite assets ship with the repository for easy modding.
-- **Portable save system**: Save files live under `save/` in the game directory, making it easy to back up or transfer progression and settings.
+- **Portable save system**: Save files live under `save/` in the game directory (with optional per-slot cloud mirrors under `save/cloud/`), making it easy to back up or transfer progression and settings.
 
 ## Build and run
 
@@ -56,7 +57,7 @@ Multiplayer sessions synchronize the selected co-op level from the host. While c
 
 ## Game flow
 
-- Main Menu → Continue/New Game/Level Select/Multiplayer/Settings/Credits/Quit.
+- Main Menu → Continue/New Game/Level Select/Level Editor/Multiplayer/Settings/Credits/Quit.
 - Solo levels unlock sequentially; clear a stage to earn a medal (Gold/Silver/Bronze) based on par time and unlock the next.
 - In-level objectives: collect all Flux Orbs to unlock the exit gate. Checkpoints update your respawn position and current gravity direction. Spikes or falling out of bounds trigger a respawn and increment the death counter.
 - Multiplayer levels (prefixed `zcoop`) focus on cooperative buttons and linked doors. They require two players but still track orbs and exits the same way.
@@ -65,6 +66,7 @@ Multiplayer sessions synchronize the selected co-op level from the host. While c
 
 - Host: choose Multiplayer → Host to advertise on LAN and wait for a client. The host’s currently selected co-op level is synced to the client.
 - Join: choose Multiplayer → Join (direct IP) or LAN Search to auto-discover a host on your network. The client will sync to the host’s selected level once connected.
+- Custom levels built in the editor are automatically sent from the host to connected clients before a run begins.
 - Progress is synced for the session; you can return to the main menu from the pause menu to close the connection.
 
 ## Settings

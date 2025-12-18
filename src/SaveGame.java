@@ -5,7 +5,8 @@ import java.io.IOException;
 import java.util.Properties;
 
 public class SaveGame {
-    private static final String SAVE_PATH = "save/save.properties";
+    private static final String SAVE_PATH_TEMPLATE = "save/save_slot%d.properties";
+    private static final String CLOUD_PATH_TEMPLATE = "save/cloud/save_slot%d.properties";
 
     public static class SaveData {
         public int currentLevelIndex;
@@ -15,14 +16,14 @@ public class SaveGame {
         public int[] bestDeaths;
     }
 
-    public static SaveData load(int levelCount) {
+    public static SaveData load(int levelCount, int slot) {
         SaveData data = new SaveData();
         data.currentLevelIndex = 0;
         data.unlockedLevels = 1;
         data.bestTimes = new double[levelCount];
         data.bestMedals = new String[levelCount];
         data.bestDeaths = new int[levelCount];
-        File file = new File(SAVE_PATH);
+        File file = new File(pathForSlot(slot));
         if (!file.exists()) {
             data.currentLevelIndex = clampIndex(data.currentLevelIndex, levelCount);
             data.unlockedLevels = clampUnlocked(data.unlockedLevels, levelCount);
@@ -92,7 +93,7 @@ public class SaveGame {
         return value;
     }
 
-    public static void save(SaveData data) {
+    public static void save(SaveData data, int slot) {
         if (data == null) {
             return;
         }
@@ -104,6 +105,10 @@ public class SaveGame {
         if (!dir.exists()) {
             dir.mkdirs();
         }
+        File cloudDir = new File("save/cloud");
+        if (!cloudDir.exists()) {
+            cloudDir.mkdirs();
+        }
         Properties props = new Properties();
         props.setProperty("currentLevelIndex", Integer.toString(data.currentLevelIndex));
         props.setProperty("unlockedLevels", Integer.toString(data.unlockedLevels));
@@ -112,20 +117,60 @@ public class SaveGame {
             props.setProperty("bestMedal" + i, data.bestMedals[i] == null ? "" : data.bestMedals[i]);
             props.setProperty("bestDeaths" + i, Integer.toString(data.bestDeaths[i]));
         }
-        try (FileOutputStream out = new FileOutputStream(SAVE_PATH)) {
+        String path = pathForSlot(slot);
+        try (FileOutputStream out = new FileOutputStream(path)) {
             props.store(out, "Platformer save");
+            syncToCloud(path, slot);
         } catch (IOException ignored) {
         }
     }
 
-    public static boolean exists() {
-        return new File(SAVE_PATH).exists();
+    public static boolean exists(int slot) {
+        return new File(pathForSlot(slot)).exists();
     }
 
-    public static void wipe() {
-        File file = new File(SAVE_PATH);
+    public static void wipe(int slot) {
+        File file = new File(pathForSlot(slot));
         if (file.exists()) {
             file.delete();
         }
+        File cloud = new File(String.format(CLOUD_PATH_TEMPLATE, slot));
+        if (cloud.exists()) {
+            cloud.delete();
+        }
+    }
+
+    private static String pathForSlot(int slot) {
+        int safeSlot = Math.max(1, Math.min(3, slot));
+        return String.format(SAVE_PATH_TEMPLATE, safeSlot);
+    }
+
+    private static void syncToCloud(String localPath, int slot) {
+        try (FileInputStream in = new FileInputStream(localPath)) {
+            File outFile = new File(String.format(CLOUD_PATH_TEMPLATE, slot));
+            if (!outFile.getParentFile().exists()) {
+                outFile.getParentFile().mkdirs();
+            }
+            try (FileOutputStream out = new FileOutputStream(outFile)) {
+                in.transferTo(out);
+            }
+        } catch (IOException ignored) {
+        }
+    }
+
+    public static SaveData load(int levelCount) {
+        return load(levelCount, 1);
+    }
+
+    public static void save(SaveData data) {
+        save(data, 1);
+    }
+
+    public static boolean exists() {
+        return exists(1);
+    }
+
+    public static void wipe() {
+        wipe(1);
     }
 }

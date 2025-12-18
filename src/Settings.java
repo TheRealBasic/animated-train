@@ -7,19 +7,25 @@ import java.util.Properties;
 public class Settings {
     private static final String SETTINGS_PATH = "save/settings.properties";
     private int masterVolume = 80;
+    private int uiVolume = 70;
+    private int sfxVolume = 90;
     private double screenScale = 1.0;
     private boolean showDebugHud = false;
     private boolean showFps = false;
+    private boolean highContrastHud = false;
     private boolean movementEffects = true;
     private boolean jumpEffects = true;
     private boolean deathEffects = true;
     private boolean screenDistortion = true;
     private boolean screenOverlay = true;
     private boolean screenBezel = true;
+    private double crtSharpness = 1.0;
     private boolean sharedRespawns = true;
     private int suitPalette = 0;
     private int visorColor = 0;
     private boolean fullscreen = false;
+    private boolean ironmanMode = false;
+    private int activeSaveSlot = 1;
     private int keyLeft = java.awt.event.KeyEvent.VK_A;
     private int keyRight = java.awt.event.KeyEvent.VK_D;
     private int keyJump = java.awt.event.KeyEvent.VK_SPACE;
@@ -35,9 +41,12 @@ public class Settings {
         try (FileInputStream in = new FileInputStream(file)) {
             props.load(in);
             settings.masterVolume = Integer.parseInt(props.getProperty("masterVolume", "80"));
+            settings.uiVolume = Integer.parseInt(props.getProperty("uiVolume", "70"));
+            settings.sfxVolume = Integer.parseInt(props.getProperty("sfxVolume", "90"));
             settings.screenScale = Double.parseDouble(props.getProperty("screenScale", "1.0"));
             settings.showDebugHud = Boolean.parseBoolean(props.getProperty("showDebugHud", "false"));
             settings.showFps = Boolean.parseBoolean(props.getProperty("showFps", "false"));
+            settings.highContrastHud = Boolean.parseBoolean(props.getProperty("highContrastHud", "false"));
             boolean legacyScreen = Boolean.parseBoolean(props.getProperty("screenEffects", "true"));
             settings.movementEffects = Boolean.parseBoolean(props.getProperty("movementEffects", "true"));
             settings.jumpEffects = Boolean.parseBoolean(props.getProperty("jumpEffects", "true"));
@@ -45,6 +54,7 @@ public class Settings {
             settings.screenDistortion = Boolean.parseBoolean(props.getProperty("screenDistortion", Boolean.toString(legacyScreen)));
             settings.screenOverlay = Boolean.parseBoolean(props.getProperty("screenOverlay", Boolean.toString(legacyScreen)));
             settings.screenBezel = Boolean.parseBoolean(props.getProperty("screenBezel", Boolean.toString(legacyScreen)));
+            settings.crtSharpness = Double.parseDouble(props.getProperty("crtSharpness", "1.0"));
             boolean legacyReduced = Boolean.parseBoolean(props.getProperty("reducedEffects", "false"));
             if (legacyReduced) {
                 settings.movementEffects = false;
@@ -58,6 +68,8 @@ public class Settings {
             settings.suitPalette = Integer.parseInt(props.getProperty("suitPalette", "0"));
             settings.visorColor = Integer.parseInt(props.getProperty("visorColor", "0"));
             settings.fullscreen = Boolean.parseBoolean(props.getProperty("fullscreen", "false"));
+            settings.ironmanMode = Boolean.parseBoolean(props.getProperty("ironmanMode", "false"));
+            settings.activeSaveSlot = Integer.parseInt(props.getProperty("activeSaveSlot", "1"));
             settings.keyLeft = Integer.parseInt(props.getProperty("keyLeft", Integer.toString(settings.keyLeft)));
             settings.keyRight = Integer.parseInt(props.getProperty("keyRight", Integer.toString(settings.keyRight)));
             settings.keyJump = Integer.parseInt(props.getProperty("keyJump", Integer.toString(settings.keyJump)));
@@ -75,9 +87,12 @@ public class Settings {
         }
         Properties props = new Properties();
         props.setProperty("masterVolume", Integer.toString(masterVolume));
+        props.setProperty("uiVolume", Integer.toString(uiVolume));
+        props.setProperty("sfxVolume", Integer.toString(sfxVolume));
         props.setProperty("screenScale", Double.toString(screenScale));
         props.setProperty("showDebugHud", Boolean.toString(showDebugHud));
         props.setProperty("showFps", Boolean.toString(showFps));
+        props.setProperty("highContrastHud", Boolean.toString(highContrastHud));
         props.setProperty("movementEffects", Boolean.toString(movementEffects));
         props.setProperty("jumpEffects", Boolean.toString(jumpEffects));
         props.setProperty("deathEffects", Boolean.toString(deathEffects));
@@ -85,10 +100,13 @@ public class Settings {
         props.setProperty("screenDistortion", Boolean.toString(screenDistortion));
         props.setProperty("screenOverlay", Boolean.toString(screenOverlay));
         props.setProperty("screenBezel", Boolean.toString(screenBezel));
+        props.setProperty("crtSharpness", Double.toString(crtSharpness));
         props.setProperty("sharedRespawns", Boolean.toString(sharedRespawns));
         props.setProperty("suitPalette", Integer.toString(suitPalette));
         props.setProperty("visorColor", Integer.toString(visorColor));
         props.setProperty("fullscreen", Boolean.toString(fullscreen));
+        props.setProperty("ironmanMode", Boolean.toString(ironmanMode));
+        props.setProperty("activeSaveSlot", Integer.toString(activeSaveSlot));
         props.setProperty("keyLeft", Integer.toString(keyLeft));
         props.setProperty("keyRight", Integer.toString(keyRight));
         props.setProperty("keyJump", Integer.toString(keyJump));
@@ -105,6 +123,22 @@ public class Settings {
 
     public void setMasterVolume(int masterVolume) {
         this.masterVolume = Math.max(0, Math.min(100, masterVolume));
+    }
+
+    public int getUiVolume() {
+        return uiVolume;
+    }
+
+    public void setUiVolume(int uiVolume) {
+        this.uiVolume = Math.max(0, Math.min(100, uiVolume));
+    }
+
+    public int getSfxVolume() {
+        return sfxVolume;
+    }
+
+    public void setSfxVolume(int sfxVolume) {
+        this.sfxVolume = Math.max(0, Math.min(100, sfxVolume));
     }
 
     public double getScreenScale() {
@@ -179,6 +213,14 @@ public class Settings {
         this.screenBezel = screenBezel;
     }
 
+    public double getCrtSharpness() {
+        return crtSharpness;
+    }
+
+    public void setCrtSharpness(double crtSharpness) {
+        this.crtSharpness = Math.max(0.5, Math.min(2.0, crtSharpness));
+    }
+
     public void setScreenEffectsEnabled(boolean enabled) {
         this.screenDistortion = enabled;
         this.screenOverlay = enabled;
@@ -217,6 +259,22 @@ public class Settings {
         this.fullscreen = fullscreen;
     }
 
+    public boolean isIronmanMode() {
+        return ironmanMode;
+    }
+
+    public void setIronmanMode(boolean ironmanMode) {
+        this.ironmanMode = ironmanMode;
+    }
+
+    public int getActiveSaveSlot() {
+        return activeSaveSlot;
+    }
+
+    public void setActiveSaveSlot(int activeSaveSlot) {
+        this.activeSaveSlot = Math.max(1, Math.min(3, activeSaveSlot));
+    }
+
     public int getKeyLeft() {
         return keyLeft;
     }
@@ -247,6 +305,14 @@ public class Settings {
 
     public void setShowFps(boolean showFps) {
         this.showFps = showFps;
+    }
+
+    public boolean isHighContrastHud() {
+        return highContrastHud;
+    }
+
+    public void setHighContrastHud(boolean highContrastHud) {
+        this.highContrastHud = highContrastHud;
     }
 
     public String getLastDirectIp() {

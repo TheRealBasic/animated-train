@@ -47,4 +47,16 @@ public class MovingPlatform extends Platform {
     public double getDeltaY() {
         return getY() - lastY;
     }
+
+    public double getEndX() {
+        return endX;
+    }
+
+    public double getEndY() {
+        return endY;
+    }
+
+    public double getSpeed() {
+        return speed;
+    }
 }

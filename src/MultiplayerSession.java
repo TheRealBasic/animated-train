@@ -123,6 +123,20 @@ public class MultiplayerSession {
         }
     }
 
+    public void sendLevelData(String levelId, String payloadBase64) {
+        if (levelId == null || payloadBase64 == null) {
+            return;
+        }
+        try {
+            if (writer == null) {
+                writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8));
+            }
+            writer.write("LEVELDATA " + levelId + " " + payloadBase64 + "\n");
+            writer.flush();
+        } catch (IOException ignored) {
+        }
+    }
+
     public void sendStart() {
         try {
             if (writer == null) {
@@ -163,9 +177,9 @@ public class MultiplayerSession {
 
     public record RemoteState(Double x, Double y, GravityDir gravity, Long orbMask, Integer levelIndex,
                              Integer paletteIndex, Integer visorIndex, Boolean ready, Boolean sharedRespawns,
-                             boolean startSignal, boolean respawnSignal) {
+                             boolean startSignal, boolean respawnSignal, String levelId, String levelPayload) {
         public RemoteState() {
-            this(null, null, null, null, null, null, null, null, null, false, false);
+            this(null, null, null, null, null, null, null, null, null, false, false, null, null);
         }
 
         private RemoteState merge(RemoteState update) {
@@ -180,7 +194,9 @@ public class MultiplayerSession {
                     coalesce(update.ready, ready),
                     coalesce(update.sharedRespawns, sharedRespawns),
                     startSignal || update.startSignal,
-                    respawnSignal || update.respawnSignal
+                    respawnSignal || update.respawnSignal,
+                    coalesce(update.levelId, levelId),
+                    coalesce(update.levelPayload, levelPayload)
             );
         }
 
@@ -194,10 +210,10 @@ public class MultiplayerSession {
             }
             String[] parts = line.split(" ");
             if ("START".equals(parts[0])) {
-                return new RemoteState(null, null, null, null, null, null, null, null, null, true, false);
+                return new RemoteState(null, null, null, null, null, null, null, null, null, true, false, null, null);
             }
             if ("RESPAWN".equals(parts[0])) {
-                return new RemoteState(null, null, null, null, null, null, null, null, null, false, true);
+                return new RemoteState(null, null, null, null, null, null, null, null, null, false, true, null, null);
             }
             if (parts.length < 2) {
                 return null;
@@ -212,7 +228,7 @@ public class MultiplayerSession {
                     Integer visor = parts.length >= 7 ? Integer.parseInt(parts[6]) : null;
                     Boolean ready = parts.length >= 8 ? Integer.parseInt(parts[7]) == 1 : null;
                     Boolean shared = parts.length >= 9 ? Integer.parseInt(parts[8]) == 1 : null;
-                    return new RemoteState(x, y, gravity, mask, null, palette, visor, ready, shared, false, false);
+                    return new RemoteState(x, y, gravity, mask, null, palette, visor, ready, shared, false, false, null, null);
                 } catch (Exception ex) {
                     return null;
                 }
@@ -220,10 +236,21 @@ public class MultiplayerSession {
             if ("LEVEL".equals(parts[0]) && parts.length >= 2) {
                 try {
                     int level = Integer.parseInt(parts[1]);
-                    return new RemoteState(null, null, null, null, level, null, null, null, null, false, false);
+                    return new RemoteState(null, null, null, null, level, null, null, null, null, false, false, null, null);
                 } catch (NumberFormatException ex) {
                     return null;
                 }
+            }
+            if ("LEVELDATA".equals(parts[0]) && parts.length >= 3) {
+                String id = parts[1];
+                StringBuilder payload = new StringBuilder();
+                for (int i = 2; i < parts.length; i++) {
+                    if (i > 2) {
+                        payload.append(' ');
+                    }
+                    payload.append(parts[i]);
+                }
+                return new RemoteState(null, null, null, null, null, null, null, null, null, false, false, id, payload.toString());
             }
             return null;
         }
