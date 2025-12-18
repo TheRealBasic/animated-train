@@ -165,6 +165,16 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private int finalMessageCharsRevealed;
     private double matrixGlitchTimer;
     private boolean screenEffectsCalmOverride;
+    private boolean hudHidden;
+    private double hudHintTimer;
+    private boolean gravityLocked;
+    private double jumpBufferTimer;
+    private double coyoteTimer;
+    private double orbPingTimer;
+    private FluxOrb orbPingTarget;
+    private boolean calmEffects;
+    private boolean muted;
+    private boolean quickRecoverArmed;
 
     private enum GameState {
         SPLASH,
@@ -347,9 +357,11 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
         if (gameState == GameState.IN_GAME) {
             updateGravityCooldown(dt);
+            updateAssistTimers(dt);
             handleInput();
             updateMovingPlatforms(dt);
             player.applyPhysics(getAllPlatforms(), gravityDir);
+            updateGroundedState();
             if (multiplayerActive && session != null) {
                 syncMultiplayer();
             }
@@ -419,10 +431,15 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             }
         }
 
-        if (jumpPressed && !jumpHeld && player.isGrounded()) {
+        if (jumpPressed && !jumpHeld) {
+            jumpBufferTimer = 0.18;
+        }
+        if (jumpBufferTimer > 0 && (player.isGrounded() || coyoteTimer > 0)) {
             player.jump(gravityDir);
             spawnJumpSmoke();
             SoundManager.playJump();
+            jumpBufferTimer = 0;
+            coyoteTimer = 0;
         }
         jumpHeld = jumpPressed;
     }
@@ -689,6 +706,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         deathCount++;
         orbStreak = 0;
         idleTimer = 0;
+        quickRecoverArmed = false;
         if (!multiplayerActive) {
             if (deathlessRun) {
                 setCompanionToast("Deathless run interrupted", new Color(236, 158, 142));
@@ -805,6 +823,24 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
     }
 
+    private void updateAssistTimers(double dt) {
+        if (jumpBufferTimer > 0) {
+            jumpBufferTimer = Math.max(0, jumpBufferTimer - dt);
+        }
+        if (coyoteTimer > 0) {
+            coyoteTimer = Math.max(0, coyoteTimer - dt);
+        }
+        if (orbPingTimer > 0) {
+            orbPingTimer = Math.max(0, orbPingTimer - dt);
+            if (orbPingTimer == 0) {
+                orbPingTarget = null;
+            }
+        }
+        if (hudHintTimer > 0) {
+            hudHintTimer = Math.max(0, hudHintTimer - dt);
+        }
+    }
+
     private void updateEffects(double dt) {
         if (deathEffectTimer > 0) {
             deathEffectTimer = Math.max(0, deathEffectTimer - dt);
@@ -910,6 +946,48 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
     }
 
+    private void updateGroundedState() {
+        if (player.isGrounded()) {
+            coyoteTimer = 0.16;
+            quickRecoverArmed = true;
+            applyMovingPlatformCarry();
+        }
+    }
+
+    private void applyMovingPlatformCarry() {
+        if (movers == null) {
+            return;
+        }
+        for (MovingPlatform mover : movers) {
+            if (isSupportedBy(mover, gravityDir)) {
+                player.setPosition(player.getX() + mover.getDeltaX(), player.getY() + mover.getDeltaY());
+                break;
+            }
+        }
+    }
+
+    private boolean isSupportedBy(MovingPlatform mover, GravityDir dir) {
+        double px = player.getX();
+        double py = player.getY();
+        double pw = player.getWidth();
+        double ph = player.getHeight();
+        boolean overlapX = px + pw > mover.getX() && px < mover.getX() + mover.getWidth();
+        boolean overlapY = py + ph > mover.getY() && py < mover.getY() + mover.getHeight();
+        double epsilon = 0.6;
+        switch (dir) {
+            case DOWN:
+                return overlapX && Math.abs(py + ph - mover.getY()) <= epsilon;
+            case UP:
+                return overlapX && Math.abs(py - (mover.getY() + mover.getHeight())) <= epsilon;
+            case LEFT:
+                return overlapY && Math.abs(px - (mover.getX() + mover.getWidth())) <= epsilon;
+            case RIGHT:
+                return overlapY && Math.abs(px + pw - mover.getX()) <= epsilon;
+            default:
+                return false;
+        }
+    }
+
     private String[] getSoloBroadcasts() {
         return SOLO_BROADCASTS;
     }
@@ -936,7 +1014,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private double getScreenStress() {
-        if (screenEffectsCalmOverride || finalEscapeSequenceActive) {
+        if (screenEffectsCalmOverride || finalEscapeSequenceActive || calmEffects) {
             return 0.0;
         }
         int finalSolo = Math.max(1, getFinalSoloLevelIndex());
@@ -945,7 +1023,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private void changeGravity(GravityDir newDir) {
-        if (gravityDir == newDir || gravityCooldownRemaining > 0) {
+        if (gravityLocked || gravityDir == newDir || gravityCooldownRemaining > 0) {
             return;
         }
 
@@ -968,6 +1046,67 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         if (!reverted && gravityDir == newDir) {
             gravityCooldownRemaining = GRAVITY_COOLDOWN;
         }
+    }
+
+    private void toggleGravityLock() {
+        gravityLocked = !gravityLocked;
+        setToast(gravityLocked ? "Gravity lock enabled" : "Gravity lock off", new Color(146, 218, 170));
+    }
+
+    private void toggleHudHidden() {
+        hudHidden = !hudHidden;
+        hudHintTimer = 1.6;
+        setToast(hudHidden ? "HUD hidden" : "HUD restored", new Color(198, 186, 162));
+    }
+
+    private void triggerOrbPing() {
+        double bestDist = Double.MAX_VALUE;
+        FluxOrb best = null;
+        for (FluxOrb orb : orbs) {
+            if (orb.isCollected()) {
+                continue;
+            }
+            double dx = orb.getPosition().x - (player.getX() + player.getWidth() / 2.0);
+            double dy = orb.getPosition().y - (player.getY() + player.getHeight() / 2.0);
+            double dist = Math.hypot(dx, dy);
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = orb;
+            }
+        }
+        if (best != null) {
+            orbPingTarget = best;
+            orbPingTimer = 6.0;
+            setToast("Nearest orb highlighted", new Color(104, 214, 178));
+        } else {
+            setToast("All orbs collected", new Color(198, 186, 162));
+        }
+    }
+
+    private void toggleCalmEffects() {
+        calmEffects = !calmEffects;
+        if (!calmEffects) {
+            screenEffectsCalmOverride = false;
+        }
+        setToast(calmEffects ? "Screen effects softened" : "Screen effects restored", new Color(182, 210, 110));
+    }
+
+    private void toggleMute() {
+        muted = !muted;
+        double volume = muted ? 0.0 : settings.getMasterVolume() / 100.0;
+        SoundManager.setMasterVolume(volume);
+        setToast(muted ? "Audio muted" : "Audio unmuted", new Color(214, 186, 132));
+    }
+
+    private void recoverToLastSafe() {
+        Point2D.Double safe = lastSafeGroundedPos.get(gravityDir);
+        if (safe == null) {
+            return;
+        }
+        player.setPosition(safe.x, safe.y);
+        player.resetVelocity();
+        quickRecoverArmed = false;
+        setToast("Returned to last footing", new Color(156, 204, 214));
     }
 
     private void onLevelComplete() {
@@ -1764,6 +1903,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
         for (FluxOrb orb : orbs) {
             orb.draw(g2d);
+            if (orbPingTimer > 0 && orb == orbPingTarget) {
+                drawOrbPing(g2d, orb);
+            }
         }
         if (!multiplayerActive) {
             drawRespawnBeacon(g2d);
@@ -1939,6 +2081,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private void drawHud(Graphics2D g2d) {
+        if (hudHidden) {
+            drawHudToggleBadge(g2d, "UI hidden - press H to restore");
+            return;
+        }
         long collected = orbs.stream().filter(FluxOrb::isCollected).count();
 
         Color panelBg = new Color(10, 8, 18, 200);
@@ -2078,7 +2224,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.drawString(cooldownText, barX, barY - 12);
 
         g2d.setFont(new Font("Consolas", Font.PLAIN, 14));
-        String controlsText = "Controls: A/D move • Space jump • Shift sprint • R restart • I/J/K/L rotate";
+        String controlsText = "Controls: A/D move • Space jump • Shift sprint • R restart • I/J/K/L rotate • H hide UI • O ping orb";
         int bezelOffset = settings.isScreenBezelEnabled() ? 70 : 12;
         int controlsY = BASE_HEIGHT - bezelOffset;
         int controlsX = 18;
@@ -2113,7 +2259,25 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             g2d.drawString(toastMessage, (BASE_WIDTH - width) / 2, toastY);
         }
 
+        drawHudToggleBadge(g2d, "Hide UI [H]");
         drawGravityCompass(g2d);
+    }
+
+    private void drawHudToggleBadge(Graphics2D g2d, String label) {
+        int badgeWidth = g2d.getFontMetrics().stringWidth(label) + 24;
+        int badgeHeight = 26;
+        int x = BASE_WIDTH - badgeWidth - 12;
+        int y = BASE_HEIGHT - (settings.isScreenBezelEnabled() ? 76 : 28);
+        g2d.setColor(new Color(8, 6, 16, 190));
+        g2d.fillRoundRect(x, y, badgeWidth, badgeHeight, 12, 12);
+        g2d.setColor(new Color(156, 102, 212));
+        g2d.drawRoundRect(x, y, badgeWidth, badgeHeight, 12, 12);
+        g2d.setColor(new Color(214, 206, 192));
+        g2d.drawString(label, x + 12, y + 18);
+        if (hudHintTimer > 0) {
+            g2d.setColor(new Color(146, 218, 170, (int) (120 * Math.min(1.0, hudHintTimer))));
+            g2d.drawString("New", x - 46, y + 18);
+        }
     }
 
     private String describeLink() {
@@ -2228,6 +2392,18 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.drawOval(x, y, radius * 2, radius * 2);
         g2d.setColor(new Color(224, 234, 248, 200));
         g2d.fillOval((int) respawnPosition.x + PLAYER_W / 2 - 4, (int) respawnPosition.y + PLAYER_H / 2 - 4, 8, 8);
+    }
+
+    private void drawOrbPing(Graphics2D g2d, FluxOrb orb) {
+        double pulse = 0.5 + 0.5 * Math.sin(System.nanoTime() / 1_000_000_000.0 * 6.0);
+        int radius = (int) (orb.getRadius() * 3 + pulse * 6);
+        int x = (int) orb.getPosition().x - radius;
+        int y = (int) orb.getPosition().y - radius;
+        int diameter = radius * 2;
+        g2d.setColor(new Color(104, 214, 178, 80));
+        g2d.fillOval(x, y, diameter, diameter);
+        g2d.setColor(new Color(214, 236, 242, 180));
+        g2d.drawOval(x, y, diameter, diameter);
     }
 
     private void drawPauseMenu(Graphics2D g2d) {
@@ -2554,6 +2730,36 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         if (e.getKeyCode() == KeyEvent.VK_ESCAPE) {
             gameState = GameState.PAUSE;
             pauseMenuIndex = 0;
+            return;
+        }
+
+        if (e.getKeyCode() == KeyEvent.VK_H) {
+            toggleHudHidden();
+            return;
+        }
+
+        if (e.getKeyCode() == KeyEvent.VK_G) {
+            toggleGravityLock();
+            return;
+        }
+
+        if (e.getKeyCode() == KeyEvent.VK_O) {
+            triggerOrbPing();
+            return;
+        }
+
+        if (e.getKeyCode() == KeyEvent.VK_V) {
+            toggleCalmEffects();
+            return;
+        }
+
+        if (e.getKeyCode() == KeyEvent.VK_M) {
+            toggleMute();
+            return;
+        }
+
+        if (e.getKeyCode() == KeyEvent.VK_BACK_SPACE && quickRecoverArmed) {
+            recoverToLastSafe();
             return;
         }
 
