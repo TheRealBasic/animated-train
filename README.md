@@ -2,6 +2,18 @@
 
 A standalone Java 2D platformer built on Swing/Java2D featuring a gravity-warping mechanic. Play solo or link up with a friend over LAN/direct IP to solve cooperative button-door puzzles, collect Flux Orbs, race par times, and clear handcrafted stages with unlockable medals.
 
+## Features at a glance
+
+- **Gravity-warping traversal**: Flip gravity up, down, left, or right at any time to pathfind around hazards, invert platform layouts, and create fresh routes through every stage.
+- **Tight 2D platforming**: Responsive movement with coyote time, jump buffering, sprint nudges, and consistent physics tuned for keyboard controls.
+- **Solo campaign**: Progress through handcrafted stages, collect all Flux Orbs, and race par times to earn Bronze, Silver, or Gold medals while unlocking the next level.
+- **Co-op levels**: Dedicated two-player maps (prefixed `zcoop`) built around synchronized buttons, doors, and orb collection with shared victory conditions.
+- **LAN/direct multiplayer**: Host or join sessions over your network or direct IP with automatic level syncing and shared progression for the session.
+- **Accessible configuration**: In-game Settings menu for rebinding keys, adjusting screen scale, toggling HUD/CRT visual effects, and tuning master volume.
+- **Debug visibility**: Optional debug HUD with FPS overlay and adjustable post-processing toggles for development or performance tuning.
+- **Procedural audio & bundled assets**: All sound effects are generated at runtime; level JSON files and sprite assets ship with the repository for easy modding.
+- **Portable save system**: Save files live under `save/` in the game directory, making it easy to back up or transfer progression and settings.
+
 ## Build and run
 
 1. Install a JDK (version 17 or newer recommended).
@@ -24,6 +36,14 @@ A standalone Java 2D platformer built on Swing/Java2D featuring a gravity-warpin
    ```
 
 No external libraries are required—the project uses only the Java standard library and ships its own assets under `assets/`.
+
+## How the game works
+
+Gravity Warp Trials is built around deliberate platforming where manipulating gravity is as important as jumping. Each level contains Flux Orbs scattered across the map; collecting all of them unlocks the exit gate. You start with gravity pointing downward, but at any moment you can warp gravity to any cardinal direction (`I`/`J`/`K`/`L`). Changing gravity immediately reorients your character and alters which surfaces are walkable, enabling wall-walking, ceiling traversal, or rapid descents. Hazards like spikes, pits, or crushing ceilings force careful timing—deaths reset you to your latest checkpoint with your current gravity direction preserved.
+
+Progression is gated through medals: finishing under par time awards Bronze, Silver, or Gold, with later levels unlocking as you clear the previous stage. Co-op levels remix the formula by requiring both players to manipulate buttons and doors together; success depends on coordinating gravity shifts so each player can reach their side of a puzzle. All levels can be replayed from Level Select to chase better times or refine routes.
+
+Multiplayer sessions synchronize the selected co-op level from the host. While connected, deaths, orb collection, and exits are tracked for both players; either can return to the main menu via the pause menu to end the session. Settings and save data are stored locally and persist between sessions, so preferred bindings, visual effect toggles, and the last joined IP are remembered.
 
 ## Controls
 
