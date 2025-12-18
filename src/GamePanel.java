@@ -5,6 +5,7 @@ import java.awt.AlphaComposite;
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.Composite;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
@@ -36,6 +37,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private static final int KILL_PADDING = 500;
     private static final double FRICTION = 0.85;
     private static final double GRAVITY_COOLDOWN = 0.4;
+    private static final String FINAL_ESCAPE_MESSAGE = "Thank you for helping me escape..";
     private static final Color[][] SUIT_PALETTES = new Color[][]{
             {new Color(156, 102, 212), new Color(86, 46, 124)},
             {new Color(120, 214, 172), new Color(86, 160, 138)},
@@ -44,16 +46,21 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             {new Color(214, 104, 116), new Color(152, 48, 76)}
     };
     private static final String[] SOLO_BROADCASTS = new String[]{
-            "Command uplink: You’re not alone out there.",
-            "Telemetry: Solo routing stable. Keep exploring.",
-            "Archivist: These halls miss conversation. Leave them none.",
-            "Field note: Gravity isn’t a cage, it’s a canvas.",
-            "Logistics: Supplies en route if you keep moving.",
-            "Echo: The station hums when you sprint; it likes the energy.",
-            "Nav: Exit gate beacon is listening for your footsteps.",
-            "Wellness: Breathe in on climbs, breathe out on flips.",
-            "Reminder: Par time is just one story you can tell.",
-            "Comms: Solo channel open. Talk to yourself kindly."
+            "Signal bleed: Someone woke up inside the CRT. It whispers your name.",
+            "Telemetry: Static forms a face when you stop. It wants out.",
+            "Archivist: A pilot went missing in these halls—now bound to phosphor.",
+            "Field note: Gravity isn’t a cage, but the screen is. Don’t linger.",
+            "Logistics: Power flickers when the trapped soul strains the glass.",
+            "Echo: The station hums with another heartbeat; not yours.",
+            "Nav: The exit gate flickers like a mouth trying to speak.",
+            "Wellness: Breathe slow; something shares the air inside the bezel.",
+            "Reminder: Par time measures more than speed. It measures patience of the ghost.",
+            "Comms: Channel crackles—help me escape this screen.",
+            "Maintenance: Each level fractures the glass more. Ignore the spiderweb lines at your peril.",
+            "System log: Glitches aren’t bugs—they’re footprints. The trapped soul keeps pacing.",
+            "Broadcast override: Green code rains behind your eyes when the static surges.",
+            "Warning: Screen hum peaks when you flip gravity too fast. That’s it pushing back.",
+            "Final note: If you reach level 10, the CRT might finally speak for itself."
     };
 
     private final Timer timer;
@@ -148,6 +155,14 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private double companionChatCooldown;
     private String lastHintMessage = "";
     private boolean gateUnlockAnnounced;
+    private boolean finalEscapeSequenceActive;
+    private boolean finalShutdownTriggered;
+    private double finalShutdownTimer;
+    private double levelCompleteElapsed;
+    private double finalMessageTypeTimer;
+    private int finalMessageCharsRevealed;
+    private double matrixGlitchTimer;
+    private boolean screenEffectsCalmOverride;
 
     private enum GameState {
         SPLASH,
@@ -253,6 +268,14 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         companionChatCooldown = 0;
         lastHintMessage = "";
         gateUnlockAnnounced = false;
+        finalEscapeSequenceActive = false;
+        finalShutdownTriggered = false;
+        levelCompleteElapsed = 0;
+        finalMessageTypeTimer = 0;
+        finalMessageCharsRevealed = 0;
+        matrixGlitchTimer = 0;
+        finalShutdownTimer = 0;
+        screenEffectsCalmOverride = false;
         if (companion != null) {
             companion.snapTo(spawn.x - 26, spawn.y - 32);
         }
@@ -343,6 +366,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             if (exitGate.checkCollision(player)) {
                 onLevelComplete();
             }
+        }
+
+        if (gameState == GameState.LEVEL_COMPLETE && finalEscapeSequenceActive) {
+            updateFinalEscapeSequence(dt);
         }
 
         updateEffects(dt);
@@ -722,6 +749,50 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
     }
 
+    private void updateFinalEscapeSequence(double dt) {
+        levelCompleteElapsed += dt;
+        matrixGlitchTimer += dt * 1.35;
+        double delayBeforeTyping = 1.0;
+        if (levelCompleteElapsed >= delayBeforeTyping && finalMessageCharsRevealed < FINAL_ESCAPE_MESSAGE.length()) {
+            finalMessageTypeTimer += dt;
+            double cadence = 0.22;
+            while (finalMessageTypeTimer >= cadence && finalMessageCharsRevealed < FINAL_ESCAPE_MESSAGE.length()) {
+                finalMessageTypeTimer -= cadence;
+                finalMessageCharsRevealed++;
+                char ch = FINAL_ESCAPE_MESSAGE.charAt(finalMessageCharsRevealed - 1);
+                if (!Character.isWhitespace(ch)) {
+                    SoundManager.playTone(680 + vhsNoise.nextInt(120), 45, 0.35);
+                }
+            }
+        }
+
+        if (finalMessageCharsRevealed >= FINAL_ESCAPE_MESSAGE.length()) {
+            finalShutdownTimer += dt;
+            double shutdownDelay = 1.8;
+            if (!finalShutdownTriggered && finalShutdownTimer >= shutdownDelay) {
+                triggerFinalShutdown();
+            }
+        }
+    }
+
+    private void triggerFinalShutdown() {
+        finalShutdownTriggered = true;
+        screenEffectsCalmOverride = true;
+        resetScreenEffects();
+        finalEscapeSequenceActive = false;
+        gameState = GameState.MAIN_MENU;
+        levelCompleteElapsed = 0;
+    }
+
+    private void resetScreenEffects() {
+        deathEffectTimer = 0;
+        screenShakeTimer = 0;
+        screenShakeStrength = 0;
+        matrixGlitchTimer = 0;
+        finalMessageTypeTimer = 0;
+        finalMessageCharsRevealed = 0;
+    }
+
     private void updateGravityCooldown(double dt) {
         if (gravityCooldownRemaining > 0) {
             gravityCooldownRemaining = Math.max(0, gravityCooldownRemaining - dt);
@@ -837,6 +908,36 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         return SOLO_BROADCASTS;
     }
 
+    private int getActiveLevelIndex() {
+        if (gameState == GameState.LEVEL_COMPLETE) {
+            return Math.max(0, lastCompletedIndex);
+        }
+        return Math.max(0, saveData == null ? 0 : saveData.currentLevelIndex);
+    }
+
+    private int getFinalSoloLevelIndex() {
+        if (levelManager == null) {
+            return 0;
+        }
+        int lastSolo = 0;
+        for (int i = 0; i < levelManager.getLevelCount(); i++) {
+            LevelData level = levelManager.getLevel(i);
+            if (level != null && !level.isMultiplayerOnly()) {
+                lastSolo = i;
+            }
+        }
+        return lastSolo;
+    }
+
+    private double getScreenStress() {
+        if (screenEffectsCalmOverride || finalEscapeSequenceActive) {
+            return 0.0;
+        }
+        int finalSolo = Math.max(1, getFinalSoloLevelIndex());
+        int current = Math.min(getActiveLevelIndex(), finalSolo);
+        return Math.max(0.0, Math.min(1.0, current / (double) finalSolo));
+    }
+
     private void changeGravity(GravityDir newDir) {
         if (gravityDir == newDir || gravityCooldownRemaining > 0) {
             return;
@@ -882,6 +983,14 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         if (!multiplayerActive && (newBestTime || (previousBestDeaths == 0 || deathCount < previousBestDeaths))) {
             setCompanionToast("New personal best logged!", new Color(178, 236, 196));
         }
+        finalEscapeSequenceActive = !multiplayerActive && lastCompletedIndex == getFinalSoloLevelIndex();
+        screenEffectsCalmOverride = finalEscapeSequenceActive;
+        finalShutdownTriggered = false;
+        finalShutdownTimer = 0;
+        levelCompleteElapsed = 0;
+        finalMessageTypeTimer = 0;
+        finalMessageCharsRevealed = 0;
+        matrixGlitchTimer = 0;
         SaveGame.save(saveData);
         gameState = GameState.LEVEL_COMPLETE;
         levelCompleteIndex = 0;
@@ -994,6 +1103,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         int height = source.getHeight();
         ensureBuffers(width, height);
         BufferedImage distorted = distortionBuffer;
+        double stress = getScreenStress();
 
         if (settings.isScreenDistortionEnabled()) {
             int[] src = ((DataBufferInt) source.getRaster().getDataBuffer()).getData();
@@ -1001,13 +1111,14 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
             double cx = width / 2.0;
             double cy = height / 2.0;
-            double fishEyeStrength = 0.18;
-            double aberration = 0.6 + 3.2 * Math.min(1.0, deathEffectTimer);
-            double wobble = 0.35 * Math.sin(System.nanoTime() / 1_000_000_000.0 * 4.0);
+            double fishEyeStrength = 0.18 + 0.14 * stress;
+            double aberration = 0.6 + 3.2 * Math.min(1.0, deathEffectTimer) + 1.1 * stress;
+            double wobble = 0.35 * Math.sin(System.nanoTime() / 1_000_000_000.0 * 4.0) + stress * 0.18 * Math.sin(System.nanoTime() / 1_000_000_000.0 * 7.2);
             aberration += wobble;
 
             double shakeDuration = 0.6;
             double shakeScale = screenShakeTimer > 0 ? screenShakeStrength * (screenShakeTimer / shakeDuration) : 0.0;
+            shakeScale += 0.16 * stress;
             double shakeX = (vhsNoise.nextDouble() * 2 - 1) * shakeScale;
             double shakeY = (vhsNoise.nextDouble() * 2 - 1) * shakeScale;
 
@@ -1062,10 +1173,12 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         BufferedImage coolShift = tintImage(source, new Color(126, 86, 196, 120), tintBufferCool);
         BufferedImage warmShift = tintImage(source, new Color(196, 122, 74, 120), tintBufferWarm);
 
-        g2d.setComposite(java.awt.AlphaComposite.SrcOver.derive(0.35f));
-        g2d.drawImage(coolShift, 2, 0, null);
-        g2d.setComposite(java.awt.AlphaComposite.SrcOver.derive(0.3f));
-        g2d.drawImage(warmShift, -2, 1, null);
+        double stress = getScreenStress();
+        int offset = 2 + (int) Math.round(stress * 3);
+        g2d.setComposite(java.awt.AlphaComposite.SrcOver.derive((float) (0.35 + stress * 0.2)));
+        g2d.drawImage(coolShift, offset, 0, null);
+        g2d.setComposite(java.awt.AlphaComposite.SrcOver.derive((float) (0.3 + stress * 0.15)));
+        g2d.drawImage(warmShift, -offset, 1 + (int) Math.round(stress * 2), null);
         g2d.dispose();
         return smeared;
     }
@@ -1128,6 +1241,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
     private void drawCrtOverlay(Graphics2D g2d, boolean allowJitter) {
         AffineTransform oldTransform = g2d.getTransform();
+        double stress = getScreenStress();
         double t = System.nanoTime() / 1_000_000_000.0;
         int jitter = allowJitter ? (int) (Math.sin(t * 7.3) * 2) : 0;
         g2d.translate(jitter, 0);
@@ -1163,7 +1277,40 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.fillRect(0, bandY, BASE_WIDTH, 5);
         g2d.fillRect(0, (bandY + BASE_HEIGHT / 2) % BASE_HEIGHT, BASE_WIDTH, 5);
 
+        drawScreenCracks(g2d, stress);
+
         g2d.setTransform(oldTransform);
+    }
+
+    private void drawScreenCracks(Graphics2D g2d, double stress) {
+        if (stress <= 0.01) {
+            return;
+        }
+        Random crackRng = new Random(97L * (1 + getActiveLevelIndex()));
+        Stroke oldStroke = g2d.getStroke();
+        g2d.setStroke(new BasicStroke((float) (1.2 + stress * 2.4), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        int fractures = 3 + (int) Math.round(stress * 8);
+        Color shard = new Color(214, 236, 242, (int) (32 + stress * 120));
+        g2d.setColor(shard);
+        for (int i = 0; i < fractures; i++) {
+            double startX = crackRng.nextBoolean() ? 0 : BASE_WIDTH * crackRng.nextDouble();
+            double startY = crackRng.nextDouble() * BASE_HEIGHT;
+            double midX = BASE_WIDTH * crackRng.nextDouble();
+            double midY = BASE_HEIGHT * crackRng.nextDouble();
+            double endX = crackRng.nextBoolean() ? BASE_WIDTH : BASE_WIDTH * crackRng.nextDouble();
+            double endY = crackRng.nextDouble() * BASE_HEIGHT;
+            g2d.drawLine((int) startX, (int) startY, (int) midX, (int) midY);
+            g2d.drawLine((int) midX, (int) midY, (int) endX, (int) endY);
+        }
+        g2d.setStroke(new BasicStroke((float) (0.8 + stress * 1.4), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g2d.setColor(new Color(116, 186, 230, (int) (18 + stress * 120)));
+        for (int i = 0; i < fractures; i++) {
+            int x = (int) (crackRng.nextDouble() * BASE_WIDTH);
+            int y = (int) (crackRng.nextDouble() * BASE_HEIGHT);
+            int radius = 4 + (int) Math.round(stress * 14 * crackRng.nextDouble());
+            g2d.drawOval(x - radius, y - radius, radius * 2, radius * 2);
+        }
+        g2d.setStroke(oldStroke);
     }
 
     private void drawSplash(Graphics2D g2d) {
@@ -2108,6 +2255,11 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     }
 
     private void drawLevelComplete(Graphics2D g2d) {
+        if (finalEscapeSequenceActive) {
+            drawFinalEscapeScreen(g2d);
+            return;
+        }
+
         g2d.setColor(new Color(0, 0, 0, 160));
         g2d.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
         g2d.setFont(new Font("Consolas", Font.BOLD, 24));
@@ -2134,6 +2286,49 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             g2d.setColor(levelCompleteIndex == i ? new Color(198, 112, 230) : new Color(218, 208, 196));
             int width = g2d.getFontMetrics().stringWidth(options[i]);
             g2d.drawString(options[i], (BASE_WIDTH - width) / 2, startY + i * 32);
+        }
+    }
+
+    private void drawEscapeMatrixRain(Graphics2D g2d) {
+        double stress = Math.max(0.2, getScreenStress());
+        Random rng = new Random(11L + (long) (matrixGlitchTimer * 1200));
+        g2d.setFont(new Font("Consolas", Font.PLAIN, 14));
+        for (int x = 0; x < BASE_WIDTH; x += 18) {
+            double speed = 40 + rng.nextDouble() * 120 * (0.6 + stress);
+            double offset = (matrixGlitchTimer * speed + rng.nextInt(BASE_HEIGHT)) % (BASE_HEIGHT + 60) - 60;
+            for (int y = (int) offset; y < BASE_HEIGHT; y += 20) {
+                char c = rng.nextBoolean() ? '0' : '1';
+                int alpha = (int) Math.min(196, 64 + (BASE_HEIGHT - y) * (0.2 + stress));
+                g2d.setColor(new Color(94, 232, 168, Math.max(10, alpha)));
+                g2d.drawString(Character.toString(c), x, y);
+            }
+        }
+    }
+
+    private void drawFinalEscapeScreen(Graphics2D g2d) {
+        g2d.setColor(Color.BLACK);
+        g2d.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+
+        if (levelCompleteElapsed < 0.9) {
+            Composite old = g2d.getComposite();
+            g2d.setComposite(AlphaComposite.SrcOver.derive(0.35f));
+            drawEscapeMatrixRain(g2d);
+            g2d.setComposite(old);
+        }
+
+        String rendered = FINAL_ESCAPE_MESSAGE.substring(0, Math.min(finalMessageCharsRevealed, FINAL_ESCAPE_MESSAGE.length()));
+        boolean showCursor = finalMessageCharsRevealed < FINAL_ESCAPE_MESSAGE.length() || ((int) (levelCompleteElapsed * 2) % 2 == 0);
+        String cursor = showCursor ? "_" : "";
+
+        g2d.setFont(new Font("Consolas", Font.BOLD, 24));
+        g2d.setColor(new Color(180, 244, 196));
+        int width = g2d.getFontMetrics().stringWidth(rendered + cursor);
+        g2d.drawString(rendered + cursor, (BASE_WIDTH - width) / 2, BASE_HEIGHT / 2);
+
+        if (finalShutdownTriggered) {
+            float fade = (float) Math.min(1.0, finalShutdownTimer / 0.6);
+            g2d.setColor(new Color(0, 0, 0, (int) (fade * 255)));
+            g2d.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
         }
     }
 
@@ -2267,6 +2462,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             return;
         }
         if (gameState == GameState.LEVEL_COMPLETE) {
+            if (finalEscapeSequenceActive) {
+                return;
+            }
             handleMenuNavigation(e, 2, () -> handleLevelCompleteSelect(levelCompleteIndex));
             return;
         }
