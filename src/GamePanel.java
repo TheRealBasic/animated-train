@@ -41,8 +41,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private static final int PLAYER_W = 24;
     private static final int PLAYER_H = 38;
     private static final int KILL_PADDING = 500;
-    private static final double FRICTION = 0.85;
-    private static final double GRAVITY_COOLDOWN = 0.4;
+    private static final double FIXED_STEP_SECONDS = 1.0 / 120.0;
     private static final String FINAL_ESCAPE_MESSAGE = "Thank you for helping me escape..";
     private static final Color[][] SUIT_PALETTES = new Color[][]{
             {new Color(156, 102, 212), new Color(86, 46, 124)},
@@ -199,6 +198,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
     private double editorWidth;
     private double editorHeight;
     private String editorStatus;
+    private MovementTuning movementTuning;
+    private int tweakIndex;
+    private double gameplayAccumulator;
 
     private enum GameState {
         SPLASH,
@@ -254,6 +256,9 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         lastSafeGroundedPos = new EnumMap<>(GravityDir.class);
         gravityDir = GravityDir.DOWN;
         gravityCooldownRemaining = 0;
+        movementTuning = MovementTuning.load();
+        tweakIndex = 0;
+        gameplayAccumulator = 0;
         player = new Player(0, 0, PLAYER_W, PLAYER_H);
         partner = new Player(0, 0, PLAYER_W, PLAYER_H);
         customizePreview = new Player(BASE_WIDTH / 2.0 - 12, BASE_HEIGHT / 2.0, PLAYER_W, PLAYER_H);
@@ -338,6 +343,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
             lastSafeGroundedPos.put(dir, new Point2D.Double(spawn.x, spawn.y));
         }
         gravityCooldownRemaining = 0;
+        gameplayAccumulator = 0;
         waitingForLevelSync = false;
         wasGrounded = player.isGrounded();
         localReady = false;
@@ -421,37 +427,10 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
 
         if (gameState == GameState.IN_GAME) {
-            updateGravityCooldown(dt);
-            updateAssistTimers(dt);
-            handleInput();
-            updateMovingPlatforms(dt);
-            player.applyPhysics(getAllPlatforms(), gravityDir);
-            updateGroundedState();
-            if (multiplayerActive && session != null) {
-                syncMultiplayer();
-            }
-            if (player.isGrounded()) {
-                lastSafeGroundedPos.put(gravityDir, new Point2D.Double(player.getX(), player.getY()));
-            }
-            updateMovementEffects(dt);
-            double playerTangential = gravityDir.isVertical() ? player.getVelX() : player.getVelY();
-            player.updateAnimation(dt, gravityDir, playerTangential, player.isGrounded());
-            updateCoopButtons();
-            collectOrbs(player, true);
-            if (multiplayerActive) {
-                double partnerTangential = partnerGravity.isVertical() ? partner.getVelX() : partner.getVelY();
-                partner.updateAnimation(dt, partnerGravity, partnerTangential, true);
-                collectOrbs(partner, false);
-            }
-            handleKillPlane();
-            handleCheckpoints();
-            handleHazards();
-            objectiveManager.update(dt, player);
-            if (!multiplayerActive) {
-                updateSoloCompany(dt);
-            }
-            if (exitGate.checkCollision(player)) {
-                onLevelComplete();
+            gameplayAccumulator = Math.min(0.25, gameplayAccumulator + dt);
+            while (gameplayAccumulator >= FIXED_STEP_SECONDS) {
+                stepGameplay(FIXED_STEP_SECONDS);
+                gameplayAccumulator -= FIXED_STEP_SECONDS;
             }
         }
 
@@ -477,8 +456,47 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
     }
 
-    private void handleInput() {
-        double moveSpeed = shiftPressed ? 0.9 : 0.6;
+    private void stepGameplay(double dt) {
+        updateGravityCooldown(dt);
+        updateAssistTimers(dt);
+        handleInput(dt);
+        updateMovingPlatforms(dt);
+        player.applyPhysics(getAllPlatforms(), gravityDir, movementTuning, dt);
+        updateGroundedState();
+        if (multiplayerActive && session != null) {
+            syncMultiplayer();
+        }
+        if (player.isGrounded()) {
+            lastSafeGroundedPos.put(gravityDir, new Point2D.Double(player.getX(), player.getY()));
+        }
+        updateMovementEffects(dt);
+        double playerTangential = player.getTangentVelocity(gravityDir);
+        player.updateAnimation(dt, gravityDir, playerTangential, player.isGrounded());
+        updateCoopButtons();
+        collectOrbs(player, true);
+        if (multiplayerActive) {
+            double partnerTangential = partner.getTangentVelocity(partnerGravity);
+            partner.updateAnimation(dt, partnerGravity, partnerTangential, true);
+            collectOrbs(partner, false);
+        }
+        handleKillPlane();
+        handleCheckpoints();
+        handleHazards();
+        objectiveManager.update(dt, player);
+        if (!multiplayerActive) {
+            updateSoloCompany(dt);
+        }
+        if (exitGate.checkCollision(player)) {
+            onLevelComplete();
+        }
+    }
+
+    private void handleInput(double dt) {
+        double accel = player.isGrounded() ? movementTuning.getGroundAcceleration() : movementTuning.getAirAcceleration();
+        double moveSpeed = accel * dt;
+        if (shiftPressed) {
+            moveSpeed *= movementTuning.getSprintMultiplier();
+        }
         boolean moveLeft = leftPressed;
         boolean moveRight = rightPressed;
 
@@ -490,27 +508,31 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
         if (gravityDir.isVertical()) {
             if (moveLeft && !moveRight) {
-                player.addVelocity(-moveSpeed, 0);
+                player.addTangentialVelocity(gravityDir, -moveSpeed);
             } else if (moveRight && !moveLeft) {
-                player.addVelocity(moveSpeed, 0);
+                player.addTangentialVelocity(gravityDir, moveSpeed);
             } else {
-                player.applyFriction(FRICTION, gravityDir);
+                player.applyTangentialFriction(player.isGrounded() ? movementTuning.getGroundFriction() : movementTuning.getAirFriction(), gravityDir);
             }
         } else {
             if (moveLeft && !moveRight) {
-                player.addVelocity(0, -moveSpeed);
+                player.addTangentialVelocity(gravityDir, -moveSpeed);
             } else if (moveRight && !moveLeft) {
-                player.addVelocity(0, moveSpeed);
+                player.addTangentialVelocity(gravityDir, moveSpeed);
             } else {
-                player.applyFriction(FRICTION, gravityDir);
+                player.applyTangentialFriction(player.isGrounded() ? movementTuning.getGroundFriction() : movementTuning.getAirFriction(), gravityDir);
             }
         }
 
+        if (shiftPressed && moveLeft != moveRight && player.isGrounded()) {
+            player.addTangentialVelocity(gravityDir, Math.signum(player.getTangentVelocity(gravityDir)) * movementTuning.getSprintNudge() * dt);
+        }
+
         if (jumpPressed && !jumpHeld) {
-            jumpBufferTimer = 0.18;
+            jumpBufferTimer = movementTuning.getJumpBufferSeconds();
         }
         if (jumpBufferTimer > 0 && (player.isGrounded() || coyoteTimer > 0)) {
-            player.jump(gravityDir);
+            player.jump(gravityDir, movementTuning);
             spawnJumpSmoke();
             SoundManager.playJump();
             jumpBufferTimer = 0;
@@ -815,6 +837,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         player.setPosition(respawnPosition.x, respawnPosition.y);
         player.resetVelocity();
         gravityDir = respawnGravity;
+        gameplayAccumulator = 0;
         deathEffectTimer = 1.0;
         screenShakeTimer = 0.6;
         screenShakeStrength = 8.0;
@@ -1046,7 +1069,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
 
     private void updateGroundedState() {
         if (player.isGrounded()) {
-            coyoteTimer = 0.16;
+            coyoteTimer = movementTuning.getCoyoteSeconds();
             quickRecoverArmed = true;
             applyMovingPlatformCarry();
         }
@@ -1142,7 +1165,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         }
 
         if (!reverted && gravityDir == newDir) {
-            gravityCooldownRemaining = GRAVITY_COOLDOWN;
+            gravityCooldownRemaining = movementTuning.getGravitySwapCooldown();
         }
     }
 
@@ -2471,7 +2494,8 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.setColor(panelAccent);
         g2d.drawRoundRect(cooldownX, cooldownY, cooldownWidth, cooldownHeight, 16, 16);
 
-        double readiness = 1.0 - Math.min(1.0, gravityCooldownRemaining / GRAVITY_COOLDOWN);
+        double cooldownWindow = Math.max(0.001, movementTuning.getGravitySwapCooldown());
+        double readiness = 1.0 - Math.min(1.0, gravityCooldownRemaining / cooldownWindow);
         int barX = cooldownX + 16;
         int barY = cooldownY + 48;
         int barW = cooldownWidth - 32;
@@ -2491,7 +2515,7 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
         g2d.drawString(cooldownText, barX, barY - 12);
 
         g2d.setFont(new Font("Consolas", Font.PLAIN, 14));
-        String controlsText = "Controls: A/D move • Space jump • Shift sprint • R restart • I/J/K/L rotate • H hide UI • O ping orb";
+        String controlsText = "Controls: A/D move • Space jump • Shift sprint • R restart • I/J/K/L rotate • F6/F7/F8/F9 tuning";
         int bezelOffset = settings.isScreenBezelEnabled() ? 70 : 12;
         int controlsY = BASE_HEIGHT - bezelOffset;
         int controlsX = 18;
@@ -3006,6 +3030,26 @@ public class GamePanel extends JPanel implements ActionListener, KeyListener {
                 return;
             }
             handleMenuNavigation(e, 2, () -> handleLevelCompleteSelect(levelCompleteIndex));
+            return;
+        }
+
+        if (e.getKeyCode() == KeyEvent.VK_F6) {
+            movementTuning = MovementTuning.load();
+            setToast("Movement tuning reloaded", new Color(168, 220, 198));
+            return;
+        }
+        if (e.getKeyCode() == KeyEvent.VK_F7) {
+            tweakIndex = (tweakIndex + 1) % movementTuning.liveKeys().length;
+            String key = movementTuning.liveKeys()[tweakIndex];
+            setToast("Tuning: " + key + "=" + movementTuning.getDisplayValue(key), new Color(218, 206, 168));
+            return;
+        }
+        if (e.getKeyCode() == KeyEvent.VK_F8 || e.getKeyCode() == KeyEvent.VK_F9) {
+            int delta = e.getKeyCode() == KeyEvent.VK_F9 ? 1 : -1;
+            String key = movementTuning.liveKeys()[tweakIndex];
+            movementTuning.adjust(key, delta);
+            movementTuning.save();
+            setToast("Tuning " + key + "=" + movementTuning.getDisplayValue(key), new Color(168, 198, 232));
             return;
         }
 
