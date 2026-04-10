@@ -15,6 +15,27 @@ A standalone Java 2D platformer built on Swing/Java2D featuring a gravity-warpin
 - **Procedural audio & bundled assets**: All sound effects are generated at runtime; level JSON files and sprite assets ship with the repository for easy modding.
 - **Portable save system**: Save files live under `save/` in the game directory (with optional per-slot cloud mirrors under `save/cloud/`), making it easy to back up or transfer progression and settings.
 
+
+## Remake scaffold (multi-module)
+
+A clean remake codebase now lives at the repository root as a Gradle multi-module project with explicit boundaries:
+
+- `core-physics`
+- `level-runtime`
+- `rendering`
+- `ui`
+- `audio`
+- `netcode`
+- `persistence`
+
+Run baseline checks:
+
+```bash
+gradle clean check
+```
+
+See `ARCHITECTURE_REMAKE.md` for module interfaces and dependency rules.
+
 ## Build and run
 
 1. Install a JDK (version 17 or newer recommended).

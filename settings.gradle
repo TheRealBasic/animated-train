@@ -1,0 +1,11 @@
+rootProject.name = 'gravity-warp-trials-remake'
+
+include(
+    'core-physics',
+    'level-runtime',
+    'rendering',
+    'ui',
+    'audio',
+    'netcode',
+    'persistence'
+)
