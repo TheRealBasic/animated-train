@@ -6,11 +6,6 @@ import java.awt.geom.Rectangle2D;
 import java.util.List;
 
 public class Player {
-    private static final double GRAVITY = 0.6;
-    private static final double MAX_FALL_SPEED = 12.0;
-    private static final double MAX_RUN_SPEED = 5.0;
-    private static final double JUMP_VELOCITY = 10.5;
-
     private double x;
     private double y;
     private final int width;
@@ -34,92 +29,76 @@ public class Player {
         velY += dy;
     }
 
-    public void applyFriction(double factor, GravityDir gravityDir) {
-        if (gravityDir.isVertical()) {
-            velX *= factor;
-            if (Math.abs(velX) < 0.1) {
+    public void applyTangentialFriction(double factor, GravityDir gravityDir) {
+        double tangent = getTangentVelocity(gravityDir) * factor;
+        if (Math.abs(tangent) < 2.0) {
+            tangent = 0;
+        }
+        setTangentVelocity(gravityDir, tangent);
+    }
+
+    public void applyPhysics(List<Platform> platforms, GravityDir gravityDir, MovementTuning tuning, double dt) {
+        double nx = gravityDir.getXSign();
+        double ny = gravityDir.getYSign();
+        double tx = -ny;
+        double ty = nx;
+
+        double normalVel = velX * nx + velY * ny;
+        double tangentVel = velX * tx + velY * ty;
+        normalVel = clampMagnitude(normalVel + tuning.getGravityPerSecond() * dt, tuning.getMaxFallSpeed());
+        tangentVel = clampMagnitude(tangentVel, tuning.getMaxRunSpeed() * tuning.getSprintMultiplier());
+
+        moveAlongAxis(tx, ty, tangentVel * dt, platforms, false, nx, ny);
+        grounded = false;
+        moveAlongAxis(nx, ny, normalVel * dt, platforms, true, nx, ny);
+
+        velX = tangentVel * tx + normalVel * nx;
+        velY = tangentVel * ty + normalVel * ny;
+    }
+
+    private void moveAlongAxis(double axisX, double axisY, double distance, List<Platform> platforms,
+                               boolean normalAxis, double nx, double ny) {
+        if (distance == 0) {
+            return;
+        }
+        x += axisX * distance;
+        y += axisY * distance;
+        Platform overlap = collide(x, y, platforms);
+        if (overlap == null) {
+            return;
+        }
+        double correction = computeCorrection(overlap, axisX, axisY);
+        x += axisX * correction;
+        y += axisY * correction;
+        if (normalAxis && (axisX * nx + axisY * ny) > 0) {
+            grounded = true;
+        }
+        if (normalAxis) {
+            if (Math.abs(nx) > 0) {
                 velX = 0;
+            } else {
+                velY = 0;
             }
         } else {
-            velY *= factor;
-            if (Math.abs(velY) < 0.1) {
+            if (Math.abs(axisX) > 0) {
+                velX = 0;
+            } else {
                 velY = 0;
             }
         }
     }
 
-    public void applyPhysics(List<Platform> platforms, GravityDir gravityDir) {
-        if (gravityDir.isVertical()) {
-            velY += GRAVITY * gravityDir.gravitySign();
-            if (Math.abs(velY) > MAX_FALL_SPEED) {
-                velY = MAX_FALL_SPEED * Math.signum(velY);
+    private double computeCorrection(Platform p, double axisX, double axisY) {
+        if (Math.abs(axisX) > 0.5) {
+            if (axisX > 0) {
+                return (p.getX() - width) - x;
             }
-            velX = clampMagnitude(velX, MAX_RUN_SPEED);
-        } else {
-            velX += GRAVITY * gravityDir.gravitySign();
-            if (Math.abs(velX) > MAX_FALL_SPEED) {
-                velX = MAX_FALL_SPEED * Math.signum(velX);
-            }
-            velY = clampMagnitude(velY, MAX_RUN_SPEED);
+            return (p.getX() + p.getWidth()) - x;
         }
-
-        if (gravityDir.isVertical()) {
-            double nextX = x + velX;
-            Platform horizontalHit = collide(nextX, y, platforms);
-            if (horizontalHit != null) {
-                if (velX > 0) {
-                    nextX = horizontalHit.getX() - width;
-                } else if (velX < 0) {
-                    nextX = horizontalHit.getX() + horizontalHit.getWidth();
-                }
-                velX = 0;
-            }
-
-            double nextY = y + velY;
-            Platform verticalHit = collide(nextX, nextY, platforms);
-            grounded = false;
-            if (verticalHit != null) {
-                if (velY > 0) {
-                    nextY = verticalHit.getY() - height;
-                    grounded = gravityDir == GravityDir.DOWN;
-                } else if (velY < 0) {
-                    nextY = verticalHit.getY() + verticalHit.getHeight();
-                    grounded = gravityDir == GravityDir.UP;
-                }
-                velY = 0;
-            }
-
-            x = nextX;
-            y = nextY;
-        } else {
-            double nextY = y + velY;
-            Platform verticalTangentHit = collide(x, nextY, platforms);
-            if (verticalTangentHit != null) {
-                if (velY > 0) {
-                    nextY = verticalTangentHit.getY() - height;
-                } else if (velY < 0) {
-                    nextY = verticalTangentHit.getY() + verticalTangentHit.getHeight();
-                }
-                velY = 0;
-            }
-
-            double nextX = x + velX;
-            Platform horizontalHit = collide(nextX, nextY, platforms);
-            grounded = false;
-            if (horizontalHit != null) {
-                if (velX > 0) {
-                    nextX = horizontalHit.getX() - width;
-                    grounded = gravityDir == GravityDir.RIGHT;
-                } else if (velX < 0) {
-                    nextX = horizontalHit.getX() + horizontalHit.getWidth();
-                    grounded = gravityDir == GravityDir.LEFT;
-                }
-                velX = 0;
-            }
-
-            x = nextX;
-            y = nextY;
+        if (axisY > 0) {
+            return (p.getY() - height) - y;
         }
+        return (p.getY() + p.getHeight()) - y;
     }
 
     private Platform collide(double nextX, double nextY, List<Platform> platforms) {
@@ -140,22 +119,31 @@ public class Player {
         return max * Math.signum(value);
     }
 
-    public void jump(GravityDir gravityDir) {
-        switch (gravityDir) {
-            case DOWN:
-                velY = -JUMP_VELOCITY;
-                break;
-            case UP:
-                velY = JUMP_VELOCITY;
-                break;
-            case LEFT:
-                velX = JUMP_VELOCITY;
-                break;
-            case RIGHT:
-                velX = -JUMP_VELOCITY;
-                break;
-        }
+    public void jump(GravityDir gravityDir, MovementTuning tuning) {
+        double jumpSpeed = tuning.getJumpVelocity();
+        velX = velX - gravityDir.getXSign() * jumpSpeed;
+        velY = velY - gravityDir.getYSign() * jumpSpeed;
         grounded = false;
+    }
+
+    public double getTangentVelocity(GravityDir gravityDir) {
+        double tx = -gravityDir.getYSign();
+        double ty = gravityDir.getXSign();
+        return velX * tx + velY * ty;
+    }
+
+    public void setTangentVelocity(GravityDir gravityDir, double velocity) {
+        double nx = gravityDir.getXSign();
+        double ny = gravityDir.getYSign();
+        double tx = -ny;
+        double ty = nx;
+        double normal = velX * nx + velY * ny;
+        velX = velocity * tx + normal * nx;
+        velY = velocity * ty + normal * ny;
+    }
+
+    public void addTangentialVelocity(GravityDir gravityDir, double delta) {
+        setTangentVelocity(gravityDir, getTangentVelocity(gravityDir) + delta);
     }
 
     public void setPosition(double newX, double newY) {
